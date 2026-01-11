@@ -9,6 +9,7 @@ import sys
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from git import Repo
+from git.exc import GitCommandError, InvalidGitRepositoryError
 
 # --- CONFIGURATION ---
 REPO_PATH = os.getcwd()
@@ -20,6 +21,7 @@ DOCKER_TEST_COMMAND = "pip install pytest -r requirements.txt -q && pytest"
 
 # OUTPUT CONFIGURATION
 MAX_TEST_OUTPUT_LENGTH = 4000  # Maximum characters to include from test output
+DOCKER_TIMEOUT = 300  # Timeout in seconds for Docker test execution
 
 llm = ChatOllama(
     model="qwen2.5-coder:32b-instruct",
@@ -75,7 +77,7 @@ def create_branch(repo, issue_number):
         else:
             repo.create_head(branch_name).checkout()
         return branch_name
-    except Exception as e:
+    except GitCommandError as e:
         print(f"Error creating/checking out branch '{branch_name}': {e}")
         raise
 
@@ -223,7 +225,7 @@ def run_tests_in_sandbox(repo_path):
     ]
     
     try:
-        result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=DOCKER_TIMEOUT)
         if result.returncode == 0:
             print("✅ Tests Passed!")
             return True, result.stdout
@@ -236,7 +238,7 @@ def run_tests_in_sandbox(repo_path):
         print("Error: Docker executable not found. Is Docker Desktop running?")
         return False, "Docker not found"
     except subprocess.TimeoutExpired:
-        print("Error: Test execution timed out after 300 seconds")
+        print(f"Error: Test execution timed out after {DOCKER_TIMEOUT} seconds")
         return False, "Test execution timeout"
     except Exception as e:
         print(f"Error running tests: {e}")
@@ -393,6 +395,9 @@ def main():
     
     try:
         repo = Repo(REPO_PATH)
+    except InvalidGitRepositoryError:
+        print(f"Error: {REPO_PATH} is not a valid git repository")
+        sys.exit(1)
     except Exception as e:
         print(f"Error: Failed to open git repository at {REPO_PATH}: {e}")
         sys.exit(1)
@@ -404,6 +409,9 @@ def main():
     
     try:
         branch = create_branch(repo, github_issue_number)
+    except GitCommandError as e:
+        print(f"Git error creating branch: {e}")
+        sys.exit(1)
     except Exception as e:
         print(f"Error: Failed to create branch: {e}")
         sys.exit(1)
@@ -471,14 +479,23 @@ def main():
         
         print("Pushing...")
         repo.remote(name='origin').push(branch, set_upstream=True)
+        
+        # Validate PR details to prevent command injection
+        # Ensure title and body are strings and don't contain null bytes
+        pr_title = str(pr_details.get('pr_title', 'Fix')).replace('\x00', '')
+        pr_body = str(pr_details.get('pr_body', '')).replace('\x00', '')
+        
         subprocess.run([
             "gh", "pr", "create", 
-            "--title", pr_details['pr_title'], 
-            "--body", pr_details['pr_body']
-        ], check=True)
+            "--title", pr_title, 
+            "--body", pr_body
+        ], check=True, shell=False)
         print("✅ Successfully created PR!")
     except subprocess.CalledProcessError as e:
         print(f"Error creating PR: {e}")
+        sys.exit(1)
+    except GitCommandError as e:
+        print(f"Git error during commit/push: {e}")
         sys.exit(1)
     except Exception as e:
         print(f"Error in commit/push process: {e}")
