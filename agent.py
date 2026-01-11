@@ -18,6 +18,9 @@ ENABLE_SANDBOX = True
 DOCKER_IMAGE = "python:3.11-slim" 
 DOCKER_TEST_COMMAND = "pip install pytest -r requirements.txt -q && pytest"
 
+# OUTPUT CONFIGURATION
+MAX_TEST_OUTPUT_LENGTH = 4000  # Maximum characters to include from test output
+
 llm = ChatOllama(
     model="qwen2.5-coder:32b-instruct",
     temperature=0.1,
@@ -100,8 +103,19 @@ def get_file_tree(repo_path):
         
         return [f for f in files if f.endswith(valid_exts)]
     except subprocess.CalledProcessError as e:
-        print(f"Warning: git ls-files failed ({e}). Falling back to os.walk")
-        return []
+        print(f"Warning: git ls-files failed ({e}). Using fallback method")
+        # Fallback: use os.walk to find files
+        files = []
+        valid_exts = (".py", ".js", ".go", ".html", ".css", ".java", ".rs", ".c", ".h")
+        for root, _, filenames in os.walk(repo_path):
+            # Skip .git directory
+            if '.git' in root:
+                continue
+            for filename in filenames:
+                if filename.endswith(valid_exts):
+                    rel_path = os.path.relpath(os.path.join(root, filename), repo_path)
+                    files.append(rel_path)
+        return files
     except Exception as e:
         print(f"Error getting file tree: {e}")
         return [] 
@@ -216,9 +230,8 @@ def run_tests_in_sandbox(repo_path):
         else:
             print("❌ Tests Failed!")
             output = (result.stdout + "\n" + result.stderr).strip()
-            # Limit output to last 4000 characters to avoid overwhelming the LLM
-            max_output_length = 4000
-            return False, output[-max_output_length:] 
+            # Limit output to avoid overwhelming the LLM
+            return False, output[-MAX_TEST_OUTPUT_LENGTH:] 
     except FileNotFoundError:
         print("Error: Docker executable not found. Is Docker Desktop running?")
         return False, "Docker not found"
