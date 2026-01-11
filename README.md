@@ -37,7 +37,11 @@ A self-hosted AI coding agent that automatically implements fixes for GitHub iss
 
 ## 📖 Documentation
 
-See [USAGE.md](USAGE.md) for comprehensive documentation including:
+- **[INSTALL.md](INSTALL.md)** - Complete installation guide with prerequisites
+- **[USAGE.md](USAGE.md)** - Comprehensive usage guide with examples
+- **[CONFIGURATION.md](CONFIGURATION.md)** - Configuration examples for different projects
+
+Quick links:
 - Detailed feature descriptions
 - Configuration options
 - Advanced usage examples
