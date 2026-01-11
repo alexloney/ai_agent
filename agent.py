@@ -1,10 +1,8 @@
 import os
 import subprocess
-import difflib
 import re
 import json
 import ast
-import time
 import sys
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
@@ -20,8 +18,8 @@ DOCKER_IMAGE = "python:3.11-slim"
 DOCKER_TEST_COMMAND = "pip install pytest -r requirements.txt -q && pytest"
 
 # OUTPUT CONFIGURATION
-MAX_TEST_OUTPUT_LENGTH = 4000  # Maximum characters to include from test output
-DOCKER_TIMEOUT = 300  # Timeout in seconds for Docker test execution
+MAX_TEST_OUTPUT_LENGTH = 4000  
+DOCKER_TIMEOUT = 300  
 
 llm = ChatOllama(
     model="qwen2.5-coder:32b-instruct",
@@ -30,23 +28,13 @@ llm = ChatOllama(
 )
 
 def get_issue_body(issue_number):
-    """
-    Fetch issue details from GitHub using the gh CLI.
-    
-    Args:
-        issue_number: The GitHub issue number (string or int)
-        
-    Returns:
-        str: JSON string containing issue title and body, or None on error
-    """
+    """Fetch issue details from GitHub using the gh CLI."""
     try:
-        # Validate issue number to prevent command injection
         issue_num_str = str(issue_number).strip()
         if not issue_num_str.isdigit():
             print(f"Error: Invalid issue number '{issue_number}'. Must be a positive integer.")
             return None
             
-        # Execute without shell=True to prevent command injection
         result = subprocess.run(
             ["gh", "issue", "view", issue_num_str, "--json", "title,body"],
             capture_output=True, text=True, check=True
@@ -60,16 +48,6 @@ def get_issue_body(issue_number):
         return None
 
 def create_branch(repo, issue_number):
-    """
-    Create or checkout a branch for the given issue number.
-    
-    Args:
-        repo: GitPython Repo object
-        issue_number: The GitHub issue number
-        
-    Returns:
-        str: The branch name
-    """
     branch_name = f"fix/issue-{issue_number}"
     try:
         if branch_name in repo.heads:
@@ -82,139 +60,69 @@ def create_branch(repo, issue_number):
         raise
 
 def get_file_tree(repo_path):
-    """
-    Get a list of code files in the repository.
-    Restricted to CODE files only (like V10).
-    This prevents the AI from getting distracted by READMEs or Configs.
-    
-    Args:
-        repo_path: Path to the git repository
-        
-    Returns:
-        list: List of file paths with code extensions
-    """
+    """Get a list of CODE files (ignoring docs/configs)."""
     try:
         result = subprocess.run(
             ["git", "ls-files"], 
             cwd=repo_path, capture_output=True, text=True, check=True
         )
         files = result.stdout.splitlines()
-        
-        # REVERTED: Removed .md, .txt, .json, .yml to force focus on logic
+        # V14: Keep restricted extensions to focus on logic
         valid_exts = (".py", ".js", ".go", ".html", ".css", ".java", ".rs", ".c", ".h")
-        
         return [f for f in files if f.endswith(valid_exts)]
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         print(f"Warning: git ls-files failed ({e}). Using fallback method")
-        # Fallback: use os.walk to find files
         files = []
         valid_exts = (".py", ".js", ".go", ".html", ".css", ".java", ".rs", ".c", ".h")
         for root, _, filenames in os.walk(repo_path):
-            # Skip .git directory
-            if '.git' in root:
-                continue
+            if '.git' in root: continue
             for filename in filenames:
                 if filename.endswith(valid_exts):
                     rel_path = os.path.relpath(os.path.join(root, filename), repo_path)
                     files.append(rel_path)
         return files
-    except Exception as e:
-        print(f"Error getting file tree: {e}")
-        return [] 
 
 def plan_changes(issue_content, file_list):
-    """
-    Stage 1: Architect - Identify files that need to be modified.
-    
-    Args:
-        issue_content: The GitHub issue content
-        file_list: List of available files in the repository
-        
-    Returns:
-        list: List of file paths that need to be modified
-    """
     if not file_list:
         print("Warning: No files to analyze")
         return []
         
     file_list_str = "\n".join(file_list)
-    
-    # IMPROVED PROMPT: Explicitly warns against documentation
     prompt = ChatPromptTemplate.from_template("""
     You are a Senior Software Architect.
-    
-    ISSUE:
-    {issue}
-    
-    REPOSITORY FILE LIST:
-    {file_list}
-    
-    TASK:
-    Identify the CODE files that need to be modified.
-    
+    ISSUE: {issue}
+    FILES: {file_list}
+    TASK: Identify the CODE files that need to be modified.
     CRITICAL INSTRUCTIONS:
-    1. IGNORE documentation files (README.md, etc) unless the issue is ONLY about docs.
-    2. Focus on the LOGIC. If the issue requires changing how a link is built, find the Python file that builds the link.
-    3. Select ALL files that are part of the logic chain (e.g. the function definition AND the function call).
-    
+    1. IGNORE documentation files (README.md, etc).
+    2. Focus on the LOGIC. 
     OUTPUT FORMAT: Output ONLY the filenames, one per line.
     """)
-    
     print(f"Scanning {len(file_list)} files to plan changes...")
     chain = prompt | llm
     response = chain.invoke({"issue": issue_content, "file_list": file_list_str})
     
-    # Robust Parsing
     lines = response.content.strip().split('\n')
     valid_files = []
     normalized_list = [f.replace("\\", "/") for f in file_list]
-    
     for line in lines:
         clean_line = line.strip().strip('"').strip("'").lstrip('- ').replace("\\", "/")
         if clean_line in normalized_list:
             valid_files.append(clean_line.replace("/", os.sep))
-            
     return list(set(valid_files))
 
 def check_syntax(code, filename):
-    """
-    Validate syntax of code files.
-    The Linter (Now smart enough to ignore non-Python files).
-    
-    Args:
-        code: The source code to validate
-        filename: The filename (used to determine file type)
-        
-    Returns:
-        tuple: (is_valid: bool, error_message: str or None)
-    """
-    # 1. Skip non-python files
-    if not filename.endswith(".py"):
-        return True, None
-        
-    # 2. Parse Python
+    if not filename.endswith(".py"): return True, None
     try:
         ast.parse(code)
         return True, None
     except SyntaxError as e:
-        return False, f"SyntaxError at line {e.lineno}: {e.msg}"
+        return False, f"SyntaxError at line {e.lineno}: {e.msg}\nLine content: {e.text}"
     except Exception as e:
         return False, str(e)
 
 def run_tests_in_sandbox(repo_path):
-    """
-    Run tests in a Docker sandbox for isolation.
-    The Enforcer (Docker Sandbox).
-    
-    Args:
-        repo_path: Path to the repository
-        
-    Returns:
-        tuple: (success: bool, output: str)
-    """
     print("\n--- 🔒 STARTING SANDBOXED TEST RUN ---")
-    print(f"Image: {DOCKER_IMAGE}")
-    
     abs_path = os.path.abspath(repo_path)
     docker_cmd = [
         "docker", "run", "--rm",
@@ -223,46 +131,46 @@ def run_tests_in_sandbox(repo_path):
         DOCKER_IMAGE,
         "/bin/bash", "-c", DOCKER_TEST_COMMAND
     ]
-    
     try:
-        result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=DOCKER_TIMEOUT, shell=False)
+        # V14: Using Copilot's timeout logic
+        result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=DOCKER_TIMEOUT)
         if result.returncode == 0:
             print("✅ Tests Passed!")
             return True, result.stdout
         else:
             print("❌ Tests Failed!")
             output = (result.stdout + "\n" + result.stderr).strip()
-            # Limit output to avoid overwhelming the LLM
             return False, output[-MAX_TEST_OUTPUT_LENGTH:] 
     except FileNotFoundError:
-        print("Error: Docker executable not found. Is Docker Desktop running?")
+        print("Error: Docker executable not found.")
         return False, "Docker not found"
     except subprocess.TimeoutExpired:
-        print(f"Error: Test execution timed out after {DOCKER_TIMEOUT} seconds")
-        return False, "Test execution timeout"
-    except Exception as e:
-        print(f"Error running tests: {e}")
-        return False, str(e)
+        print(f"Error: Test execution timed out after {DOCKER_TIMEOUT}s")
+        return False, "Timeout"
+
+def clean_llm_response(text):
+    """
+    V14 (Restored): Aggressively extracts code from LLM chatter.
+    """
+    # Pattern 1: Markdown code blocks
+    code_block = re.search(r'```(?:python)?\s*(.*?)```', text, re.DOTALL | re.IGNORECASE)
+    if code_block:
+        return code_block.group(1).strip()
+    
+    # Pattern 2: Fallback - Strip preamble
+    lines = text.splitlines()
+    start_index = 0
+    for i, line in enumerate(lines):
+        if line.strip().startswith(('import ', 'from ', 'def ', 'class ', '@', '#')):
+            start_index = i
+            break
+    if start_index > 0:
+        return "\n".join(lines[start_index:])
+    return text.strip()
 
 def apply_fix(issue_content, filename, file_content, test_error=None):
-    """
-    Stage 2: Engineer - Apply fixes to a file using LLM.
-    Uses safe variable injection to prevent template injection attacks.
-    
-    Args:
-        issue_content: The GitHub issue description
-        filename: Name of the file to fix
-        file_content: Current content of the file
-        test_error: Optional test error message from previous attempt
-        
-    Returns:
-        str: The fixed file content
-    """
-    
     is_python = filename.endswith(".py")
     
-    # 1. Setup the inputs dictionary
-    # We pass the dangerous content here so LangChain treats it as raw text, not a template.
     chain_inputs = {
         "issue": issue_content,
         "filename": filename,
@@ -271,8 +179,6 @@ def apply_fix(issue_content, filename, file_content, test_error=None):
         "syntax_error": ""
     }
     
-    # 2. Define the Template using placeholders {variable}
-    # Do NOT use f-strings (f"") here for the content.
     template_str = """
     You are an expert Engineer.
     CONTEXT: Fixing '{filename}'
@@ -284,91 +190,46 @@ def apply_fix(issue_content, filename, file_content, test_error=None):
     1. Rewrite the ENTIRE file with the fix.
     2. PRESERVE ALL EXISTING COMMENTS/DOCS.
     3. KEEP ORIGINAL INDENTATION.
+    4. OUTPUT ONLY CODE. NO CONVERSATIONAL TEXT.
     """
     
     if is_python:
-        template_str += """
-    4. OUTPUT ONLY VALID PYTHON CODE.
-    5. DO NOT change class constructors (__init__) unless strictly necessary.
-    """
-    else:
-        template_str += """
-    4. OUTPUT ONLY THE RAW FILE CONTENT.
-    5. Do not wrap in markdown code blocks if the file is already a markdown file.
-    """
-
+        template_str += "\n5. OUTPUT ONLY VALID PYTHON CODE."
+    
     if test_error:
         template_str += "\n\nCRITICAL: PREVIOUS FIX FAILED TESTS:\n{test_error}\nFIX THE CODE."
 
     print(f"Applying fix to {filename}...")
     
     for attempt in range(3):
-        # Handle Syntax Retry Logic
-        current_template = template_str
         if chain_inputs["syntax_error"]:
-            current_template += "\n\nPREVIOUS ATTEMPT HAD SYNTAX ERROR:\n{syntax_error}\nTRY AGAIN."
+            template_str += "\n\nPREVIOUS ATTEMPT HAD SYNTAX ERROR:\n{syntax_error}\nREMOVE ALL NON-CODE TEXT."
 
-        # Create the Template
-        prompt = ChatPromptTemplate.from_template(current_template)
+        prompt = ChatPromptTemplate.from_template(template_str)
         chain = prompt | llm
-        
-        # Invoke with the Dictionary (Safe!)
         response = chain.invoke(chain_inputs)
         
-        code = response.content
-        
-        # Cleanup Markdown wrappers
-        if code.strip().startswith("```"):
-            lines = code.splitlines()
-            if lines[0].startswith("```"): lines = lines[1:]
-            if lines[-1].startswith("```"): lines = lines[:-1]
-            code = "\n".join(lines)
+        # V14: Restored Aggressive Cleaning
+        code = clean_llm_response(response.content)
             
-        # Run Linter
         is_valid, error_msg = check_syntax(code, filename)
         if is_valid:
             return code
         
         print(f"  ...Syntax Error on attempt {attempt+1}: {error_msg}")
-        # Update the inputs for the next loop iteration
         chain_inputs["syntax_error"] = error_msg
 
     print("Warning: Failed to generate valid syntax. Saving best effort.")
     return code
 
 def extract_json_with_fallback(text):
-    """
-    Extract JSON from LLM response with fallback.
-    
-    Args:
-        text: The response text from the LLM
-        
-    Returns:
-        dict: Parsed JSON or fallback dictionary
-    """
     try:
         match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match: 
-            return json.loads(match.group(0))
-    except json.JSONDecodeError as e:
-        print(f"Warning: Failed to parse JSON from LLM response: {e}")
-    except Exception as e:
-        print(f"Warning: Unexpected error parsing JSON: {e}")
-    
-    # Fallback to default values
+        if match: return json.loads(match.group(0))
+    except: pass
     return { "commit_message": "fix: resolve issue", "pr_title": "Fix", "pr_body": text }
 
 def generate_pr_content(issue_data, diff):
-    """
-    Stage 3: Manager - Generate commit message and PR content.
-    
-    Args:
-        issue_data: The GitHub issue data
-        diff: Git diff of the changes
-        
-    Returns:
-        dict: Dictionary with commit_message, pr_title, and pr_body
-    """
     prompt = ChatPromptTemplate.from_template("""
     You are a Senior Developer.
     ISSUE: {issue}
@@ -384,10 +245,8 @@ def generate_pr_content(issue_data, diff):
 
 # --- MAIN EXECUTION ---
 def main():
-    """Main execution function for the AI agent."""
-    print(f"--- Agent V12 (Smart Linter) ---")
+    print(f"--- Agent V14 (Safe & Smart) ---")
     
-    # Get issue number from user input
     github_issue_number = input("Enter Issue Number to fix: ").strip()
     if not github_issue_number:
         print("Error: Issue number is required")
@@ -398,32 +257,20 @@ def main():
     except InvalidGitRepositoryError:
         print(f"Error: {REPO_PATH} is not a valid git repository")
         sys.exit(1)
-    except Exception as e:
-        print(f"Error: Failed to open git repository at {REPO_PATH}: {e}")
-        sys.exit(1)
-    
+        
     issue_data = get_issue_body(github_issue_number)
-    if not issue_data:
-        print("Error: Failed to fetch issue data")
-        sys.exit(1)
+    if not issue_data: sys.exit(1)
     
     try:
         branch = create_branch(repo, github_issue_number)
-    except GitCommandError as e:
-        print(f"Git error creating branch: {e}")
-        sys.exit(1)
     except Exception as e:
-        print(f"Error: Failed to create branch: {e}")
+        print(f"Error creating branch: {e}")
         sys.exit(1)
         
     file_tree = get_file_tree(REPO_PATH)
-    
     target_files = plan_changes(issue_data, file_tree)
     print(f"Plan: Fixing {len(target_files)} files -> {target_files}")
-    
-    if not target_files:
-        print("Agent decided no files needed fixing.")
-        sys.exit(0)
+    if not target_files: sys.exit(0)
         
     # EXECUTE
     for target_file in target_files:
@@ -431,39 +278,41 @@ def main():
         try:
             with open(full_path, "r", encoding="utf-8") as f:
                 old_content = f.read()
-        except FileNotFoundError:
-            print(f"Error: File not found: {full_path}")
-            continue
-        except Exception as e:
-            print(f"Error reading file {full_path}: {e}")
-            continue
-        
-        new_code = apply_fix(issue_data, target_file, old_content)
-        
-        # Write to disk
-        try:
+            new_code = apply_fix(issue_data, target_file, old_content)
             with open(full_path, "w", encoding="utf-8", newline='\n') as f:
                 f.write(new_code.replace('\r\n', '\n'))
         except Exception as e:
-            print(f"Error writing file {full_path}: {e}")
+            print(f"Error processing {target_file}: {e}")
             sys.exit(1)
 
-    # VERIFY
+    # V14: Restored The VERIFY LOOP
     if ENABLE_SANDBOX:
-        test_passed, test_log = run_tests_in_sandbox(REPO_PATH)
-        if not test_passed:
-            print("\n⚠️ TESTS FAILED. Entering Repair Loop...")
+        max_repairs = 3
+        repair_count = 0
+        
+        while repair_count < max_repairs:
+            test_passed, test_log = run_tests_in_sandbox(REPO_PATH)
+            
+            if test_passed:
+                print("✅ Verification Successful!")
+                break
+            
+            print(f"\n⚠️ TESTS FAILED (Attempt {repair_count+1}/{max_repairs}). Entering Repair Loop...")
+            
+            # Simple heuristic: Repair the first file in the plan
             primary_file = target_files[0] 
             full_path = os.path.join(REPO_PATH, primary_file)
-            try:
-                with open(full_path, "r", encoding="utf-8") as f:
-                    current_content = f.read()
-                repaired_code = apply_fix(issue_data, primary_file, current_content, test_error=test_log)
-                with open(full_path, "w", encoding="utf-8", newline='\n') as f:
-                    f.write(repaired_code.replace('\r\n', '\n'))
-            except Exception as e:
-                print(f"Error in repair loop: {e}")
-                sys.exit(1)
+            with open(full_path, "r", encoding="utf-8") as f:
+                current_content = f.read()
+            
+            repaired_code = apply_fix(issue_data, primary_file, current_content, test_error=test_log)
+            with open(full_path, "w", encoding="utf-8", newline='\n') as f:
+                f.write(repaired_code.replace('\r\n', '\n'))
+                
+            repair_count += 1
+        
+        if not test_passed:
+            print("❌ Critical: Tests failed after all repair attempts.")
 
     # COMMIT
     try:
@@ -480,8 +329,6 @@ def main():
         print("Pushing...")
         repo.remote(name='origin').push(branch, set_upstream=True)
         
-        # Validate PR details to prevent command injection
-        # Ensure title and body are strings and don't contain null bytes
         pr_title = str(pr_details.get('pr_title', 'Fix')).replace('\x00', '')
         pr_body = str(pr_details.get('pr_body', '')).replace('\x00', '')
         
@@ -490,15 +337,8 @@ def main():
             "--title", pr_title, 
             "--body", pr_body
         ], check=True, shell=False)
-        print("✅ Successfully created PR!")
-    except subprocess.CalledProcessError as e:
-        print(f"Error creating PR: {e}")
-        sys.exit(1)
-    except GitCommandError as e:
-        print(f"Git error during commit/push: {e}")
-        sys.exit(1)
     except Exception as e:
-        print(f"Error in commit/push process: {e}")
+        print(f"Error in commit/push: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
