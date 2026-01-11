@@ -225,7 +225,7 @@ def run_tests_in_sandbox(repo_path):
     ]
     
     try:
-        result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=DOCKER_TIMEOUT)
+        result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=DOCKER_TIMEOUT, shell=False)
         if result.returncode == 0:
             print("✅ Tests Passed!")
             return True, result.stdout
