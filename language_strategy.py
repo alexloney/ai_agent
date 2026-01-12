@@ -8,6 +8,9 @@ operations like syntax checking, file extensions, and test commands.
 from abc import ABC, abstractmethod
 import ast
 import re
+import subprocess
+import tempfile
+import os
 from typing import Tuple, List, Optional
 
 
@@ -103,6 +106,67 @@ class PythonStrategy(LanguageStrategy):
         if match:
             return match.group(1).replace("\\", "/")
         return None
+    
+    def run_linter(self, code: str, filename: str) -> Tuple[bool, Optional[str]]:
+        """
+        Run linter (flake8) on Python code.
+        
+        Args:
+            code: The code to lint
+            filename: Name of the file (for context)
+            
+        Returns:
+            Tuple of (is_clean, linter_output)
+        """
+        if not filename.endswith(".py"):
+            return True, None
+        
+        # Write code to temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+        
+        try:
+            # Run flake8 with reasonable settings
+            # Ignore some common issues that don't affect functionality:
+            # E501: line too long
+            # W503: line break before binary operator (style preference)
+            # E402: module level import not at top (sometimes needed)
+            result = subprocess.run(
+                ['flake8', '--ignore=E501,W503', '--max-line-length=120', temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                return True, None
+            else:
+                # Parse output to make it more readable
+                output_lines = []
+                for line in result.stdout.splitlines():
+                    # Replace temp file path with actual filename
+                    line = line.replace(temp_file, filename)
+                    output_lines.append(line)
+                
+                return False, '\n'.join(output_lines)
+                
+        except FileNotFoundError:
+            # flake8 not installed, skip linting
+            print("Warning: flake8 not found, skipping linting")
+            return True, None
+        except subprocess.TimeoutExpired:
+            print("Warning: flake8 timed out")
+            return True, None
+        except Exception as e:
+            print(f"Warning: Linting failed: {e}")
+            return True, None
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(temp_file)
+            except:
+                pass
 
 
 class MultiLanguageStrategy(LanguageStrategy):

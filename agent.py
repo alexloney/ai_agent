@@ -11,12 +11,14 @@ from git.exc import GitCommandError, InvalidGitRepositoryError
 # Import our new modules
 from language_strategy import PythonStrategy, LanguageStrategy
 from pr_manager import PRManager, parse_pr_content
+from context_manager import CodeContextManager
+from tools import CodebaseTools, ToolExecutor
 
 # --- CONFIGURATION ---
 REPO_PATH = os.getcwd()
 
 # VERSION
-AGENT_VERSION = "16"
+AGENT_VERSION = "17"
 
 # Language Strategy - can be configured for different projects
 LANGUAGE_STRATEGY = PythonStrategy()
@@ -32,7 +34,18 @@ MAX_TEST_OUTPUT_LENGTH = 4000
 DOCKER_TIMEOUT = 300
 
 # REVIEW CONFIGURATION
-MAX_REVIEW_ITERATIONS = 10  # Maximum number of review-refactor cycles  
+MAX_REVIEW_ITERATIONS = 10  # Maximum number of review-refactor cycles
+
+# RAG CONFIGURATION
+ENABLE_RAG = True  # Enable semantic search for relevant files
+RAG_MAX_FILES = 20  # Maximum files to retrieve via RAG
+
+# REACT CONFIGURATION
+ENABLE_REACT = True  # Enable ReAct pattern for tool use
+MAX_TOOL_ITERATIONS = 5  # Maximum tool exploration iterations
+
+# LINTER CONFIGURATION
+ENABLE_LINTER = True  # Enable linter checks before committing code  
 
 llm = ChatOllama(
     model="qwen2.5-coder:32b-instruct",
@@ -118,9 +131,14 @@ def get_file_tree(repo_path, include_tests=False, include_docs=False):
                     files.append(rel_path)
         return files
 
-def analyze_codebase_structure(repo_path, file_list):
+def analyze_codebase_structure(repo_path, file_list, context_manager=None):
     """Analyze the codebase to understand structure, patterns, and conventions."""
     print("\n--- 🔍 ANALYZING CODEBASE STRUCTURE ---")
+    
+    # If RAG is enabled and we have a context manager, index the codebase
+    if ENABLE_RAG and context_manager:
+        print("🔄 Indexing codebase for semantic search...")
+        context_manager.index_codebase(file_list, force_reindex=False)
     
     # Sample files to understand patterns (limit to avoid token overflow)
     sample_files = {}
@@ -173,17 +191,135 @@ def read_relevant_files(repo_path, file_list, max_files=5):
             continue
     return file_contents
 
-def plan_changes(issue_content, file_list, repo_path, codebase_analysis):
-    """Plan changes with deep understanding of the codebase."""
+def plan_changes_with_react(issue_content, file_list, repo_path, codebase_analysis, context_manager=None, tools_executor=None):
+    """Plan changes using ReAct pattern with tool exploration."""
     if not file_list:
         print("Warning: No files to analyze")
         return [], [], ""
     
-    print("\n--- 📋 PLANNING CHANGES ---")
+    print("\n--- 📋 PLANNING CHANGES (ReAct Pattern) ---")
+    
+    if not ENABLE_REACT or not tools_executor:
+        # Fall back to regular planning
+        return plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis, context_manager)
+    
+    # ReAct loop: Agent reasons, uses tools, and then decides on files
+    exploration_log = []
+    iteration = 0
+    
+    while iteration < MAX_TOOL_ITERATIONS:
+        iteration += 1
+        print(f"\n--- ReAct Iteration {iteration} ---")
+        
+        # Build context from previous tool executions
+        tool_context = ""
+        if exploration_log:
+            tool_context = "\n\nPREVIOUS TOOL EXECUTIONS:\n" + "\n".join(exploration_log)
+        
+        # Ask LLM what to do next
+        prompt = ChatPromptTemplate.from_template("""
+        You are a Senior Software Architect planning an implementation using available tools.
+        
+        CODEBASE CONTEXT:
+        {codebase_analysis}
+        
+        ISSUE TO SOLVE:
+        {issue}
+        {tool_context}
+        
+        AVAILABLE TOOLS:
+        1. search_code(query, file_pattern=None) - Search for code containing a string/pattern
+        2. find_references(symbol) - Find all references to a function/class/variable
+        3. read_file(file_path) - Read the contents of a specific file
+        4. list_files(directory="", pattern=None) - List files in a directory
+        
+        TASK: Decide what to do next.
+        
+        You can either:
+        A) Use a tool to explore the codebase further (if you need more information)
+        B) Finalize your implementation plan (if you have enough information)
+        
+        If you want to use a tool, respond with:
+        TOOL: <tool_name>
+        ARGS: <json_dict_of_arguments>
+        REASON: <why_you_need_this_information>
+        
+        If you're ready to finalize, respond with:
+        FINALIZE
+        REASON: <why_you_have_enough_information>
+        
+        Think step by step about what information you still need to create a good implementation plan.
+        """)
+        
+        chain = prompt | llm
+        response = chain.invoke({
+            "issue": issue_content,
+            "codebase_analysis": codebase_analysis,
+            "tool_context": tool_context
+        })
+        
+        decision = response.content.strip()
+        print(f"Agent Decision:\n{decision}\n")
+        
+        # Parse decision
+        if "FINALIZE" in decision:
+            print("✅ Agent ready to finalize plan")
+            break
+        
+        # Extract tool call
+        tool_match = re.search(r'TOOL:\s*(\w+)', decision)
+        args_match = re.search(r'ARGS:\s*(\{.*?\})', decision, re.DOTALL)
+        
+        if tool_match:
+            tool_name = tool_match.group(1)
+            args = {}
+            
+            if args_match:
+                try:
+                    args = json.loads(args_match.group(1))
+                except:
+                    print("Warning: Could not parse tool arguments")
+            
+            # Execute tool
+            print(f"Executing: {tool_name}({args})")
+            success, result = tools_executor.execute_tool(tool_name, **args)
+            
+            if success:
+                formatted_result = tools_executor.format_tool_result(result, max_items=10)
+                exploration_log.append(f"Tool: {tool_name}({args})\nResult:\n{formatted_result}")
+                print(f"Result: {formatted_result[:500]}...")
+            else:
+                exploration_log.append(f"Tool: {tool_name}({args})\nError: {result}")
+                print(f"Error: {result}")
+        else:
+            print("Warning: Could not parse tool from decision, moving to finalize")
+            break
+    
+    # Now do the final planning with all the context gathered
+    print("\n--- Finalizing Implementation Plan ---")
+    return plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis, context_manager, exploration_log)
+
+
+def plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis, context_manager=None, exploration_log=None):
+    """Plan changes with optional RAG and exploration context."""
+    if not file_list:
+        print("Warning: No files to analyze")
+        return [], [], ""
+    
+    # Use RAG to find relevant files if enabled
+    if ENABLE_RAG and context_manager:
+        print("🔍 Using semantic search to find relevant files...")
+        relevant_files = context_manager.get_relevant_files(issue_content, max_files=RAG_MAX_FILES)
+        print(f"Found {len(relevant_files)} relevant files via RAG")
+        
+        # Use RAG results as primary file list, fall back to original if empty
+        if relevant_files:
+            file_list = relevant_files
     
     # Read small samples of files for better context
     file_previews = {}
-    for f in file_list[:20]:  # Preview up to 20 files
+    preview_limit = min(20, len(file_list))
+    for f in file_list[:preview_limit]:
         try:
             full_path = os.path.join(repo_path, f)
             with open(full_path, 'r', encoding='utf-8') as file:
@@ -197,6 +333,11 @@ def plan_changes(issue_content, file_list, repo_path, codebase_analysis):
     
     file_info = "\n".join([f"{fname}: {preview}" for fname, preview in file_previews.items()])
     
+    # Add exploration context if available
+    exploration_context = ""
+    if exploration_log:
+        exploration_context = "\n\nEXPLORATION FINDINGS:\n" + "\n\n".join(exploration_log)
+    
     prompt = ChatPromptTemplate.from_template("""
     You are a Senior Software Architect with deep expertise in analyzing and solving complex software issues.
     
@@ -208,6 +349,7 @@ def plan_changes(issue_content, file_list, repo_path, codebase_analysis):
     
     AVAILABLE FILES (with previews):
     {file_info}
+    {exploration_context}
     
     TASK: Create a comprehensive implementation plan.
     
@@ -241,7 +383,8 @@ def plan_changes(issue_content, file_list, repo_path, codebase_analysis):
     response = chain.invoke({
         "issue": issue_content,
         "file_info": file_info,
-        "codebase_analysis": codebase_analysis
+        "codebase_analysis": codebase_analysis,
+        "exploration_context": exploration_context
     })
     
     full_response = response.content.strip()
@@ -268,6 +411,36 @@ def plan_changes(issue_content, file_list, repo_path, codebase_analysis):
             clean_line = clean_line[7:].strip()
             clean_line = clean_line.strip('"').strip("'").lstrip('- ').replace("\\", "/")
             files_to_create.append(clean_line.replace("/", os.sep))
+        
+        # Legacy support: look for FILE: prefix
+        elif clean_line.startswith("FILE:"):
+            clean_line = clean_line[5:].strip()
+            clean_line = clean_line.strip('"').strip("'").lstrip('- ').replace("\\", "/")
+            if clean_line in normalized_list:
+                files_to_modify.append(clean_line.replace("/", os.sep))
+    
+    # Extract reasoning part (everything before FILES/MODIFY/CREATE sections)
+    reasoning = full_response
+    if "MODIFY:" in full_response or "FILE:" in full_response or "CREATE:" in full_response:
+        # Find the first occurrence of any of these markers
+        split_markers = ["MODIFY:", "FILE:", "CREATE:"]
+        first_marker_pos = len(full_response)
+        for marker in split_markers:
+            pos = full_response.find(marker)
+            if pos != -1 and pos < first_marker_pos:
+                first_marker_pos = pos
+        if first_marker_pos < len(full_response):
+            reasoning = full_response[:first_marker_pos].strip()
+    
+    return list(set(files_to_modify)), list(set(files_to_create)), reasoning
+
+
+def plan_changes(issue_content, file_list, repo_path, codebase_analysis, context_manager=None, tools_executor=None):
+    """Plan changes with deep understanding of the codebase."""
+    if ENABLE_REACT and tools_executor:
+        return plan_changes_with_react(issue_content, file_list, repo_path, codebase_analysis, context_manager, tools_executor)
+    else:
+        return plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis, context_manager)
         
         # Legacy support: look for FILE: prefix
         elif clean_line.startswith("FILE:"):
@@ -493,6 +666,9 @@ def apply_fix(issue_content, filename, file_content, codebase_analysis, implemen
     for attempt in range(10):
         if chain_inputs["syntax_error"]:
             template_str += "\n\nPREVIOUS ATTEMPT HAD SYNTAX ERROR:\n{syntax_error}\nFix the syntax while maintaining the logic of the fix."
+        
+        if chain_inputs.get("linter_error"):
+            template_str += "\n\nPREVIOUS ATTEMPT HAD LINTER ISSUES:\n{linter_error}\nFix these code quality issues while maintaining the logic."
 
         prompt = ChatPromptTemplate.from_template(template_str)
         chain = prompt | llm
@@ -502,6 +678,14 @@ def apply_fix(issue_content, filename, file_content, codebase_analysis, implemen
             
         is_valid, error_msg = check_syntax(code, filename)
         if is_valid:
+            # Also run linter if enabled
+            if ENABLE_LINTER and hasattr(LANGUAGE_STRATEGY, 'run_linter'):
+                is_clean, linter_msg = LANGUAGE_STRATEGY.run_linter(code, filename)
+                if not is_clean:
+                    print(f"  ⚠️ Linter issues on attempt {attempt+1}: {linter_msg}")
+                    chain_inputs["linter_error"] = linter_msg
+                    continue
+            
             print(f"✅ Successfully generated fix for {filename}")
             return code
         
@@ -558,7 +742,8 @@ def create_new_file(issue_content, filename, codebase_analysis, implementation_p
         "implementation_plan": implementation_plan,
         "related_context": related_context,
         "python_requirement": "\n7. Ensure the output is valid, syntactically correct Python code" if is_python else "",
-        "syntax_error": ""
+        "syntax_error": "",
+        "linter_error": ""
     }
     
     for attempt in range(10):
@@ -568,6 +753,14 @@ def create_new_file(issue_content, filename, codebase_analysis, implementation_p
         
         is_valid, error_msg = check_syntax(code, filename)
         if is_valid:
+            # Also run linter if enabled
+            if ENABLE_LINTER and hasattr(LANGUAGE_STRATEGY, 'run_linter'):
+                is_clean, linter_msg = LANGUAGE_STRATEGY.run_linter(code, filename)
+                if not is_clean:
+                    print(f"  ⚠️ Linter issues on attempt {attempt+1}: {linter_msg}")
+                    chain_inputs["linter_error"] = f"\n\nPREVIOUS ATTEMPT HAD LINTER ISSUES:\n{linter_msg}\nFix these code quality issues."
+                    continue
+            
             print(f"✅ Successfully generated content for {filename}")
             return code
         
@@ -617,7 +810,7 @@ def generate_pr_content(issue_data, diff):
 
 # --- MAIN EXECUTION ---
 def main():
-    print(f"--- AI Agent V{AGENT_VERSION} (Enhanced with WIP PR & Review Loop) ---")
+    print(f"--- AI Agent V{AGENT_VERSION} (Enhanced with RAG, ReAct & Linter) ---")
     
     github_issue_number = input("Enter Issue Number to fix: ").strip()
     if not github_issue_number:
@@ -642,19 +835,40 @@ def main():
     # Initialize PR Manager
     pr_manager = PRManager(repo, branch, github_issue_number)
     
+    # Initialize RAG Context Manager
+    context_manager = None
+    if ENABLE_RAG:
+        try:
+            print("\n--- Initializing RAG Context Manager ---")
+            context_manager = CodeContextManager(REPO_PATH)
+        except Exception as e:
+            print(f"Warning: Could not initialize RAG: {e}")
+            print("Falling back to regular file listing")
+    
+    # Initialize Tools for ReAct pattern
+    tools_executor = None
+    if ENABLE_REACT:
+        try:
+            print("\n--- Initializing ReAct Tools ---")
+            codebase_tools = CodebaseTools(REPO_PATH)
+            tools_executor = ToolExecutor(codebase_tools)
+        except Exception as e:
+            print(f"Warning: Could not initialize ReAct tools: {e}")
+            print("Falling back to regular planning")
+    
     # PHASE 1: ANALYZE CODEBASE
     print("\n" + "="*60)
     print("PHASE 1: ANALYZING CODEBASE")
     print("="*60)
     file_tree = get_file_tree(REPO_PATH, include_tests=False, include_docs=False)
-    codebase_analysis = analyze_codebase_structure(REPO_PATH, file_tree)
+    codebase_analysis = analyze_codebase_structure(REPO_PATH, file_tree, context_manager)
     
     # PHASE 2: PLAN CHANGES
     print("\n" + "="*60)
     print("PHASE 2: PLANNING IMPLEMENTATION")
     print("="*60)
     files_to_modify, files_to_create, implementation_plan = plan_changes(
-        issue_data, file_tree, REPO_PATH, codebase_analysis
+        issue_data, file_tree, REPO_PATH, codebase_analysis, context_manager, tools_executor
     )
     print(f"\n📌 Files to modify ({len(files_to_modify)}): {files_to_modify}")
     print(f"📌 Files to create ({len(files_to_create)}): {files_to_create}")
