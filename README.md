@@ -5,8 +5,11 @@ A self-hosted AI coding agent that automatically implements fixes for GitHub iss
 ## 🌟 Features
 
 - **🧠 Intelligent Code Analysis**: Understands your codebase structure, patterns, and conventions
+- **🔍 RAG-Powered Search**: Uses vector embeddings to find relevant files semantically (V17)
+- **🤖 ReAct Pattern**: Explores codebase dynamically using tools like a human developer (V17)
 - **📋 Comprehensive Planning**: Creates detailed implementation plans with multi-step reasoning
 - **🔧 Context-Aware Fixes**: Generates high-quality fixes that follow your coding standards
+- **✨ Linter Integration**: Automatically runs flake8 to catch code quality issues (V17)
 - **🧪 Automated Testing**: Validates changes in sandboxed Docker environment
 - **🔄 Self-Healing**: Iteratively repairs code based on test feedback
 - **📝 Professional PRs**: Creates detailed pull requests with clear explanations
@@ -28,7 +31,8 @@ A self-hosted AI coding agent that automatically implements fixes for GitHub iss
    # or: https://github.com/cli/cli#installation
    
    # Install Python dependencies
-   pip install langchain-ollama gitpython
+   pip install -r requirements.txt
+   # or: pip install langchain-ollama gitpython chromadb flake8
    ```
 
 2. **Run the agent**:
@@ -65,8 +69,11 @@ The agent follows a 6-phase process with iterative improvements:
 
 ## 🔄 Improvements Over Basic Agents
 
-This enhanced version (V16) includes:
+This enhanced version (V17) includes:
 
+- ✅ **RAG (Retrieval-Augmented Generation)** - semantic search to find relevant files
+- ✅ **ReAct Pattern** - dynamic codebase exploration with tools
+- ✅ **Linter Integration** - automatic code quality checks with flake8
 - ✅ **Deep codebase analysis** before making changes
 - ✅ **Multi-file context** awareness during implementation
 - ✅ **Detailed implementation planning** with reasoning
@@ -86,6 +93,17 @@ Key settings in `agent.py`:
 ```python
 # Enable/disable sandboxed testing
 ENABLE_SANDBOX = True
+
+# RAG Configuration (V17)
+ENABLE_RAG = True  # Enable semantic search for relevant files
+RAG_MAX_FILES = 20  # Maximum files to retrieve via RAG
+
+# ReAct Configuration (V17)
+ENABLE_REACT = True  # Enable ReAct pattern for tool use
+MAX_TOOL_ITERATIONS = 5  # Maximum tool exploration iterations
+
+# Linter Configuration (V17)
+ENABLE_LINTER = True  # Enable linter checks before committing code
 
 # Language strategy (supports multi-language projects)
 LANGUAGE_STRATEGY = PythonStrategy()
@@ -123,17 +141,24 @@ LANGUAGE_STRATEGY = PythonStrategy()
 - Tests run in isolated Docker containers
 - Uses local Ollama LLM (no external API calls)
 - GitHub access via standard `gh` CLI
+- Linter integration catches common security issues (V17)
+- Vector database stored locally (no external API calls)
 - Always review generated code before merging
 
 ## 📊 Example Output
 
 ```
---- AI Agent V16 (Enhanced with WIP PR & Review Loop) ---
+--- AI Agent V17 (Enhanced with RAG, ReAct & Linter) ---
+
+--- Initializing RAG Context Manager ---
+--- Initializing ReAct Tools ---
 
 ============================================================
 PHASE 1: ANALYZING CODEBASE
 ============================================================
 🔍 ANALYZING CODEBASE STRUCTURE
+🔄 Indexing codebase for semantic search...
+✅ Indexed 150 code chunks from 12 files
 Codebase Analysis:
 - Python 3.x codebase using langchain and GitPython
 - Follows PEP 8 conventions with 4-space indentation
@@ -144,25 +169,35 @@ Codebase Analysis:
 ============================================================
 PHASE 2: PLANNING IMPLEMENTATION
 ============================================================
-📋 PLANNING CHANGES
+📋 PLANNING CHANGES (ReAct Pattern)
+
+--- ReAct Iteration 1 ---
+Agent Decision: I need to search for user authentication code
+Executing: search_code({'query': 'login_user', 'file_pattern': '*.py'})
+Result: Found 3 matches...
+
+--- ReAct Iteration 2 ---
+Agent Decision: I'll read the auth.py file
+Executing: read_file({'file_path': 'auth.py'})
+Result: [file content]...
+
+✅ Agent ready to finalize plan
+🔍 Using semantic search to find relevant files...
+Found 8 relevant files via RAG
+
 Implementation Plan:
 [Detailed reasoning about the issue and planned changes]
 
-📌 Files to modify (2): ['agent.py', 'utils.py']
-📌 Files to create (1): ['new_feature.py']
-
-============================================================
-CREATING WIP PULL REQUEST
-============================================================
-✅ Created WIP PR: https://github.com/owner/repo/pull/123
+📌 Files to modify (2): ['agent.py', 'auth.py']
+📌 Files to create (1): ['middleware.py']
 
 ============================================================
 PHASE 4: IMPLEMENTING CHANGES (with Review Loop)
 ============================================================
 🔧 APPLYING FIX TO agent.py
 ✅ Successfully generated fix for agent.py
-✨ CREATING NEW FILE: new_feature.py
-✅ Successfully generated content for new_feature.py
+✨ CREATING NEW FILE: middleware.py
+✅ Successfully generated content for middleware.py
 
 --- 🔍 PERFORMING SELF-REVIEW (Iteration 1) ---
 Self-Review Result: APPROVED - No concerns found
@@ -183,9 +218,11 @@ The agent now uses a modular architecture:
 ### Core Modules
 
 - **`agent.py`** - Main orchestration logic and workflow
-- **`language_strategy.py`** - Language-specific strategy pattern
+- **`context_manager.py`** - RAG implementation with ChromaDB (V17)
+- **`tools.py`** - ReAct pattern tools for codebase exploration (V17)
+- **`language_strategy.py`** - Language-specific strategy pattern with linter integration
   - `LanguageStrategy` - Abstract base class
-  - `PythonStrategy` - Python implementation
+  - `PythonStrategy` - Python implementation with flake8 linter
   - `MultiLanguageStrategy` - Support for polyglot projects
 - **`pr_manager.py`** - GitHub PR lifecycle management
   - WIP PR creation
