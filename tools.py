@@ -8,7 +8,7 @@ dynamically, similar to how a human developer would investigate an issue.
 import os
 import re
 import subprocess
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 
 
 class CodebaseTools:
@@ -23,7 +23,7 @@ class CodebaseTools:
         """
         self.repo_path = repo_path
     
-    def search_code(self, query: str, file_pattern: str = None, case_sensitive: bool = False) -> List[Dict[str, any]]:
+    def search_code(self, query: str, file_pattern: str = None, case_sensitive: bool = False) -> List[Dict[str, Any]]:
         """
         Search for a string or pattern in the codebase using grep.
         
@@ -86,7 +86,7 @@ class CodebaseTools:
         
         return matches
     
-    def _search_code_fallback(self, query: str, file_pattern: str = None, case_sensitive: bool = False) -> List[Dict[str, any]]:
+    def _search_code_fallback(self, query: str, file_pattern: str = None, case_sensitive: bool = False) -> List[Dict[str, Any]]:
         """Fallback Python implementation of code search."""
         matches = []
         pattern = re.compile(query if case_sensitive else query, re.IGNORECASE if not case_sensitive else 0)
@@ -120,7 +120,7 @@ class CodebaseTools:
         
         return matches
     
-    def find_references(self, symbol: str, file_pattern: str = None) -> List[Dict[str, any]]:
+    def find_references(self, symbol: str, file_pattern: str = None) -> List[Dict[str, Any]]:
         """
         Find references to a symbol (function, class, variable) in the codebase.
         
@@ -202,7 +202,7 @@ class CodebaseTools:
         
         return files
     
-    def get_file_info(self, file_path: str) -> Optional[Dict[str, any]]:
+    def get_file_info(self, file_path: str) -> Optional[Dict[str, Any]]:
         """
         Get metadata about a file.
         
@@ -245,7 +245,7 @@ class ToolExecutor:
         self.tools = tools
         self.execution_history = []
     
-    def execute_tool(self, tool_name: str, **kwargs) -> Tuple[bool, any]:
+    def execute_tool(self, tool_name: str, **kwargs) -> Tuple[bool, Any]:
         """
         Execute a tool by name with given arguments.
         
@@ -290,7 +290,7 @@ class ToolExecutor:
             summary.append(f"{i}. {execution['tool']}({execution['args']})")
         return '\n'.join(summary)
     
-    def format_tool_result(self, result: any, max_items: int = 10) -> str:
+    def format_tool_result(self, result: Any, max_items: int = 10) -> str:
         """
         Format tool result for display to LLM.
         

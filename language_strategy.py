@@ -131,7 +131,6 @@ class PythonStrategy(LanguageStrategy):
             # Ignore some common issues that don't affect functionality:
             # E501: line too long
             # W503: line break before binary operator (style preference)
-            # E402: module level import not at top (sometimes needed)
             result = subprocess.run(
                 ['flake8', '--ignore=E501,W503', '--max-line-length=120', temp_file],
                 capture_output=True,

@@ -8,7 +8,7 @@ than relying on fixed file limits.
 
 import os
 import hashlib
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 import chromadb
 from chromadb.config import Settings
 
@@ -212,7 +212,7 @@ class CodeContextManager:
         
         print(f"✅ Indexed {len(documents)} code chunks from {len(file_list)} files")
     
-    def semantic_search(self, query: str, n_results: int = 10) -> List[Dict[str, any]]:
+    def semantic_search(self, query: str, n_results: int = 10) -> List[Dict[str, Any]]:
         """
         Perform semantic search on the codebase.
         
