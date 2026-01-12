@@ -441,28 +441,7 @@ def plan_changes(issue_content, file_list, repo_path, codebase_analysis, context
         return plan_changes_with_react(issue_content, file_list, repo_path, codebase_analysis, context_manager, tools_executor)
     else:
         return plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis, context_manager)
-        
-        # Legacy support: look for FILE: prefix
-        elif clean_line.startswith("FILE:"):
-            clean_line = clean_line[5:].strip()
-            clean_line = clean_line.strip('"').strip("'").lstrip('- ').replace("\\", "/")
-            if clean_line in normalized_list:
-                files_to_modify.append(clean_line.replace("/", os.sep))
-    
-    # Extract reasoning part (everything before FILES/MODIFY/CREATE sections)
-    reasoning = full_response
-    if "MODIFY:" in full_response or "FILE:" in full_response or "CREATE:" in full_response:
-        # Find the first occurrence of any of these markers
-        split_markers = ["MODIFY:", "FILE:", "CREATE:"]
-        first_marker_pos = len(full_response)
-        for marker in split_markers:
-            pos = full_response.find(marker)
-            if pos != -1 and pos < first_marker_pos:
-                first_marker_pos = pos
-        if first_marker_pos < len(full_response):
-            reasoning = full_response[:first_marker_pos].strip()
-    
-    return list(set(files_to_modify)), list(set(files_to_create)), reasoning
+
 
 def check_syntax(code, filename):
     """Check syntax using the language strategy."""
