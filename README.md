@@ -10,6 +10,10 @@ A self-hosted AI coding agent that automatically implements fixes for GitHub iss
 - **🧪 Automated Testing**: Validates changes in sandboxed Docker environment
 - **🔄 Self-Healing**: Iteratively repairs code based on test feedback
 - **📝 Professional PRs**: Creates detailed pull requests with clear explanations
+- **🚧 WIP PR Workflow**: Creates PR early, updates during work, finalizes when complete
+- **🔁 Review-Refactor Loop**: Automatically reviews and refactors code until quality standards met
+- **📦 Multi-Language Support**: Extensible architecture supports multiple programming languages
+- **✨ File Creation**: Can create new files as part of implementation
 
 ## 🚀 Quick Start
 
@@ -50,23 +54,27 @@ Quick links:
 
 ## 🎯 How It Works
 
-The agent follows a 6-phase process:
+The agent follows a 6-phase process with iterative improvements:
 
 1. **Analyze Codebase** - Understands your code patterns and conventions
-2. **Plan Implementation** - Creates detailed plan with reasoning
-3. **Gather Context** - Reads all relevant files for comprehensive understanding
-4. **Implement Fixes** - Applies changes following best practices
+2. **Plan Implementation** - Creates detailed plan identifying files to modify/create
+3. **Create WIP PR** - Establishes PR early with "[WIP]" prefix for transparency
+4. **Implement with Review Loop** - Applies changes, reviews code, refactors if needed (up to 3 iterations)
 5. **Test & Validate** - Runs tests and repairs based on failures
-6. **Create PR** - Commits and creates professional pull request
+6. **Finalize PR** - Removes WIP prefix and updates with comprehensive documentation
 
 ## 🔄 Improvements Over Basic Agents
 
-This enhanced version includes:
+This enhanced version (V16) includes:
 
 - ✅ **Deep codebase analysis** before making changes
 - ✅ **Multi-file context** awareness during implementation
 - ✅ **Detailed implementation planning** with reasoning
-- ✅ **Iterative repair loop** for test failures
+- ✅ **WIP PR workflow** - create early, update during work, finalize at end
+- ✅ **Review-refactor loop** - automatically reviews and improves code quality
+- ✅ **Iterative commits** - commits progress during development
+- ✅ **File creation support** - can create new files as needed
+- ✅ **Language abstraction** - strategy pattern for multi-language support
 - ✅ **Enhanced prompting** with comprehensive context
 - ✅ **Professional PR generation** with detailed explanations
 - ✅ **Better error handling** and edge case consideration
@@ -79,9 +87,11 @@ Key settings in `agent.py`:
 # Enable/disable sandboxed testing
 ENABLE_SANDBOX = True
 
-# Docker configuration for tests
-DOCKER_IMAGE = "python:3.11-slim"
-DOCKER_TEST_COMMAND = "pip install pytest -r requirements.txt -q && pytest"
+# Language strategy (supports multi-language projects)
+LANGUAGE_STRATEGY = PythonStrategy()
+
+# Review configuration
+MAX_REVIEW_ITERATIONS = 3  # Maximum review-refactor cycles
 
 # LLM configuration
 llm = ChatOllama(
@@ -89,6 +99,23 @@ llm = ChatOllama(
     temperature=0.1,
     base_url="http://localhost:11434"
 )
+```
+
+### Language Support
+
+The agent uses a strategy pattern for language-specific operations:
+
+```python
+from language_strategy import PythonStrategy, MultiLanguageStrategy
+
+# For Python projects
+LANGUAGE_STRATEGY = PythonStrategy()
+
+# For multi-language projects (future)
+# LANGUAGE_STRATEGY = MultiLanguageStrategy([
+#     PythonStrategy(),
+#     JavaScriptStrategy(),  # To be implemented
+# ])
 ```
 
 ## 🔒 Security
@@ -101,7 +128,7 @@ llm = ChatOllama(
 ## 📊 Example Output
 
 ```
---- AI Agent V15 (Copilot-Enhanced) ---
+--- AI Agent V16 (Enhanced with WIP PR & Review Loop) ---
 
 ============================================================
 PHASE 1: ANALYZING CODEBASE
@@ -122,13 +149,53 @@ Implementation Plan:
 [Detailed reasoning about the issue and planned changes]
 
 📌 Files to modify (2): ['agent.py', 'utils.py']
+📌 Files to create (1): ['new_feature.py']
 
 ============================================================
-PHASE 3-6: IMPLEMENTING, TESTING, AND CREATING PR
+CREATING WIP PULL REQUEST
 ============================================================
-...
-✅ SUCCESS! Pull request created.
+✅ Created WIP PR: https://github.com/owner/repo/pull/123
+
+============================================================
+PHASE 4: IMPLEMENTING CHANGES (with Review Loop)
+============================================================
+🔧 APPLYING FIX TO agent.py
+✅ Successfully generated fix for agent.py
+✨ CREATING NEW FILE: new_feature.py
+✅ Successfully generated content for new_feature.py
+
+--- 🔍 PERFORMING SELF-REVIEW (Iteration 1) ---
+Self-Review Result: APPROVED - No concerns found
+✅ Self-review passed!
+
+============================================================
+PHASE 5-6: TESTING AND FINALIZING PR
+============================================================
+✅ All tests passed!
+✅ SUCCESS! Pull request finalized.
+PR URL: https://github.com/owner/repo/pull/123
 ```
+
+## 🏗️ Architecture
+
+The agent now uses a modular architecture:
+
+### Core Modules
+
+- **`agent.py`** - Main orchestration logic and workflow
+- **`language_strategy.py`** - Language-specific strategy pattern
+  - `LanguageStrategy` - Abstract base class
+  - `PythonStrategy` - Python implementation
+  - `MultiLanguageStrategy` - Support for polyglot projects
+- **`pr_manager.py`** - GitHub PR lifecycle management
+  - WIP PR creation
+  - Progressive updates
+  - Final PR finalization
+
+This architecture makes it easy to:
+- Add support for new programming languages
+- Customize PR workflows
+- Extend functionality without modifying core logic
 
 ## 🤝 Contributing
 
