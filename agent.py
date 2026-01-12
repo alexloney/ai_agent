@@ -277,8 +277,8 @@ def plan_changes_with_react(issue_content, file_list, repo_path, codebase_analys
             if args_match:
                 try:
                     args = json.loads(args_match.group(1))
-                except:
-                    print("Warning: Could not parse tool arguments")
+                except json.JSONDecodeError as e:
+                    print(f"Warning: Could not parse tool arguments: {e}")
             
             # Execute tool
             print(f"Executing: {tool_name}({args})")

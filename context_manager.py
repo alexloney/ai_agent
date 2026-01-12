@@ -45,7 +45,8 @@ class CodeContextManager:
         # Try to get existing collection or create new
         try:
             self.collection = self.client.get_collection(name=self.collection_name)
-        except:
+        except Exception as e:
+            # Collection doesn't exist, create it
             self.collection = self.client.create_collection(
                 name=self.collection_name,
                 metadata={"repo_path": repo_path}
@@ -94,9 +95,14 @@ class CodeContextManager:
                     indent_level = len(line) - len(stripped)
                 elif in_function_or_class:
                     current_chunk.append(line)
-                    # Check if we've exited the function/class
-                    if stripped and not line.startswith(' ' * (indent_level + 1)) and i > current_start:
-                        in_function_or_class = False
+                    # Check if we've exited the function/class (simplified heuristic)
+                    # A non-empty line with same or less indentation than the def/class line
+                    # likely indicates we've exited (unless it's a continuation or decorator)
+                    current_indent = len(line) - len(stripped) if stripped else float('inf')
+                    if stripped and current_indent <= indent_level and i > current_start:
+                        # Don't exit on decorators or strings
+                        if not stripped.startswith(('@', '"', "'", '#')):
+                            in_function_or_class = False
                 else:
                     current_chunk.append(line)
                 

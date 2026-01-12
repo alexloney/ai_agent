@@ -164,7 +164,8 @@ class PythonStrategy(LanguageStrategy):
             # Clean up temp file
             try:
                 os.unlink(temp_file)
-            except:
+            except (OSError, FileNotFoundError) as e:
+                # File cleanup failed, but not critical
                 pass
 
 
