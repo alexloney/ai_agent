@@ -28,6 +28,8 @@ LANGUAGE_STRATEGY = PythonStrategy()
 
 # DOC_EXTENSIONS - used for filtering documentation files
 DOC_EXTENSIONS = (".md", ".rst", ".txt")
+TEST_EXTENSIONS = (".test.py", "_test.py", "test_.py", ".spec.py")  # Python test file patterns
+CODE_EXTENSIONS = LANGUAGE_STRATEGY.get_code_extensions()
 
 # SANDBOX CONFIGURATION
 ENABLE_SANDBOX = True
