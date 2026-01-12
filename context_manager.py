@@ -77,6 +77,9 @@ class CodeContextManager:
             in_function_or_class = False
             indent_level = 0
             
+            # Track if we've seen any function/class yet
+            has_seen_definition = False
+            
             for i, line in enumerate(lines, 1):
                 stripped = line.lstrip()
                 
@@ -92,6 +95,7 @@ class CodeContextManager:
                     current_chunk = [line]
                     current_start = i
                     in_function_or_class = True
+                    has_seen_definition = True
                     indent_level = len(line) - len(stripped)
                 elif in_function_or_class:
                     current_chunk.append(line)
@@ -105,18 +109,36 @@ class CodeContextManager:
                             in_function_or_class = False
                 else:
                     current_chunk.append(line)
+                    
+                    # Special handling for module-level code before first definition
+                    # If we haven't seen a definition yet and chunk is getting large,
+                    # save it as "imports and module constants" chunk
+                    # Check every 10 lines to reduce overhead
+                    if not has_seen_definition and i % 10 == 0:
+                        chunk_content = '\n'.join(current_chunk)
+                        if len(chunk_content) > chunk_size // 2:
+                            chunks.append({
+                                'content': chunk_content,
+                                'start_line': current_start,
+                                'end_line': i
+                            })
+                            current_chunk = []
+                            current_start = i + 1
                 
                 # Also split if chunk gets too large
-                if len('\n'.join(current_chunk)) > chunk_size:
-                    chunks.append({
-                        'content': '\n'.join(current_chunk),
-                        'start_line': current_start,
-                        'end_line': i
-                    })
-                    current_chunk = []
-                    current_start = i + 1
+                # Check every 10 lines to reduce overhead
+                if i % 10 == 0:
+                    chunk_content = '\n'.join(current_chunk)
+                    if len(chunk_content) > chunk_size:
+                        chunks.append({
+                            'content': chunk_content,
+                            'start_line': current_start,
+                            'end_line': i
+                        })
+                        current_chunk = []
+                        current_start = i + 1
             
-            # Add final chunk
+            # Add final chunk - this ensures trailing code is captured
             if current_chunk:
                 chunks.append({
                     'content': '\n'.join(current_chunk),
