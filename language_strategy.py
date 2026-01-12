@@ -7,6 +7,7 @@ operations like syntax checking, file extensions, and test commands.
 
 from abc import ABC, abstractmethod
 import ast
+import re
 from typing import Tuple, List, Optional
 
 
@@ -98,7 +99,6 @@ class PythonStrategy(LanguageStrategy):
         Returns:
             Path to failing test file or None
         """
-        import re
         match = re.search(r'(tests[\\/][a-zA-Z0-9_]+\.py)', test_log)
         if match:
             return match.group(1).replace("\\", "/")

@@ -213,16 +213,30 @@ def parse_pr_content(llm_response: str) -> Dict[str, str]:
     Returns:
         Dictionary with commit_message, pr_title, and pr_body
     """
-    # Try to extract JSON
+    # Try to extract and parse JSON more carefully
     try:
-        # Look for JSON object in the response
-        match = re.search(r'\{.*\}', llm_response, re.DOTALL)
-        if match:
-            data = json.loads(match.group(0))
-            # Validate required fields
-            if 'commit_message' in data and 'pr_title' in data and 'pr_body' in data:
-                return data
-    except json.JSONDecodeError:
+        # Look for the first complete JSON object
+        start_idx = llm_response.find('{')
+        if start_idx != -1:
+            # Find matching closing brace using a simple counter
+            brace_count = 0
+            end_idx = -1
+            for i in range(start_idx, len(llm_response)):
+                if llm_response[i] == '{':
+                    brace_count += 1
+                elif llm_response[i] == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end_idx = i + 1
+                        break
+            
+            if end_idx != -1:
+                json_str = llm_response[start_idx:end_idx]
+                data = json.loads(json_str)
+                # Validate required fields
+                if 'commit_message' in data and 'pr_title' in data and 'pr_body' in data:
+                    return data
+    except (json.JSONDecodeError, ValueError):
         pass
     
     # Fallback: use the entire response as PR body

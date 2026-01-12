@@ -927,8 +927,15 @@ This PR is being automatically generated to address issue #{github_issue_number}
     # Generate final PR content
     try:
         all_files = files_to_modify + files_to_create
-        repo.index.add(all_files)
-        git_diff = repo.git.diff("HEAD^", "HEAD") if repo.head.commit.parents else repo.git.diff("--cached")
+        
+        # Get diff of the latest changes
+        # If there are parent commits, compare HEAD with its parent
+        # Otherwise, show all staged changes (for first commit)
+        if repo.head.commit.parents:
+            git_diff = repo.git.diff("HEAD^", "HEAD")
+        else:
+            # New repository, get the diff of the first commit
+            git_diff = repo.git.show("HEAD")
         
         if not git_diff.strip():
             print("Warning: No diff found, using empty diff")
