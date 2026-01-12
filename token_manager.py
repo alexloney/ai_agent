@@ -5,7 +5,11 @@ This module provides utilities to estimate token counts and manage context
 to prevent LLM confusion or crashes due to excessive input.
 """
 
+import logging
 from typing import List, Dict, Any
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 class TokenManager:
@@ -112,6 +116,10 @@ class TokenManager:
         if max_tokens is None:
             max_tokens = self.token_budget['file_content']
         
+        # Handle empty dictionary
+        if not file_contents:
+            return {}
+        
         # Calculate total tokens
         total_text = '\n\n'.join(file_contents.values())
         total_tokens = self.estimate_tokens(total_text)
@@ -199,8 +207,8 @@ class TokenManager:
         if stats['total_tokens'] <= self.max_tokens:
             return contexts
         
-        print(f"⚠️ Token budget exceeded: {stats['total_tokens']}/{self.max_tokens} tokens")
-        print(f"   Truncating contexts to fit within budget...")
+        logger.warning(f"Token budget exceeded: {stats['total_tokens']}/{self.max_tokens} tokens")
+        logger.info("Truncating contexts to fit within budget...")
         
         # Calculate tokens to remove
         excess_tokens = stats['total_tokens'] - self.max_tokens
@@ -228,6 +236,6 @@ class TokenManager:
         
         # Verify we're now within budget
         final_stats = self.get_context_stats(**truncated)
-        print(f"   ✅ Reduced to {final_stats['total_tokens']} tokens ({final_stats['total_percentage']}%)")
+        logger.info(f"Reduced to {final_stats['total_tokens']} tokens ({final_stats['total_percentage']}%)")
         
         return truncated

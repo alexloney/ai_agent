@@ -944,10 +944,10 @@ Examples:
 ## Issue #{github_issue_number}
 
 ### Files to Modify
-{chr(10).join(f'- `{f}`' for f in files_to_modify)}
+{'\n'.join(f'- `{f}`' for f in files_to_modify)}
 
 ### Files to Create
-{chr(10).join(f'- `{f}`' for f in files_to_create)}
+{'\n'.join(f'- `{f}`' for f in files_to_create)}
 
 ### Implementation Plan
 {implementation_plan}
@@ -974,10 +974,10 @@ This PR is being automatically generated to address issue #{github_issue_number}
 ### Current Status: Planning Complete
 
 **Files to Modify:** {len(files_to_modify)}
-{chr(10).join(f'- `{f}`' for f in files_to_modify)}
+{'\n'.join(f'- `{f}`' for f in files_to_modify)}
 
 **Files to Create:** {len(files_to_create)}
-{chr(10).join(f'- `{f}`' for f in files_to_create)}
+{'\n'.join(f'- `{f}`' for f in files_to_create)}
 
 ### Implementation Plan
 {implementation_plan}
