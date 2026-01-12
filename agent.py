@@ -32,7 +32,7 @@ MAX_TEST_OUTPUT_LENGTH = 4000
 DOCKER_TIMEOUT = 300
 
 # REVIEW CONFIGURATION
-MAX_REVIEW_ITERATIONS = 3  # Maximum number of review-refactor cycles  
+MAX_REVIEW_ITERATIONS = 10  # Maximum number of review-refactor cycles  
 
 llm = ChatOllama(
     model="qwen2.5-coder:32b-instruct",
@@ -490,7 +490,7 @@ def apply_fix(issue_content, filename, file_content, codebase_analysis, implemen
 
     print(f"\n--- 🔧 APPLYING FIX TO {filename} ---")
     
-    for attempt in range(3):
+    for attempt in range(10):
         if chain_inputs["syntax_error"]:
             template_str += "\n\nPREVIOUS ATTEMPT HAD SYNTAX ERROR:\n{syntax_error}\nFix the syntax while maintaining the logic of the fix."
 
@@ -508,7 +508,7 @@ def apply_fix(issue_content, filename, file_content, codebase_analysis, implemen
         print(f"  ⚠️ Syntax Error on attempt {attempt+1}: {error_msg}")
         chain_inputs["syntax_error"] = error_msg
 
-    print(f"⚠️ Warning: Failed to generate valid syntax after 3 attempts. Using best effort.")
+    print(f"⚠️ Warning: Failed to generate valid syntax after 10 attempts. Using best effort.")
     return code
 
 def create_new_file(issue_content, filename, codebase_analysis, implementation_plan, related_files=None):
@@ -561,7 +561,7 @@ def create_new_file(issue_content, filename, codebase_analysis, implementation_p
         "syntax_error": ""
     }
     
-    for attempt in range(3):
+    for attempt in range(10):
         chain = prompt | llm
         response = chain.invoke(chain_inputs)
         code = clean_llm_response(response.content)
@@ -575,7 +575,7 @@ def create_new_file(issue_content, filename, codebase_analysis, implementation_p
         # Update prompt to include syntax error feedback
         chain_inputs["syntax_error"] = f"\n\nPREVIOUS ATTEMPT HAD SYNTAX ERROR:\n{error_msg}\nFix the syntax."
     
-    print(f"⚠️ Warning: Failed to generate valid syntax after 3 attempts for {filename}")
+    print(f"⚠️ Warning: Failed to generate valid syntax after 10 attempts for {filename}")
     return code
 
 def generate_pr_content(issue_data, diff):
@@ -847,7 +847,7 @@ This PR is being automatically generated to address issue #{github_issue_number}
                               "Running tests in sandboxed environment...")
     
     if ENABLE_SANDBOX:
-        max_repairs = 3
+        max_repairs = 10
         repair_count = 0
         test_passed = False
         
@@ -862,13 +862,15 @@ This PR is being automatically generated to address issue #{github_issue_number}
             print("Analyzing failures and applying targeted fixes...")
 
             failing_test_file = identify_failing_test_file(test_log, REPO_PATH)
-            test_context = ""
+            failing_test_content = None
             if failing_test_file:
                 print(f"   Detected failing test: {failing_test_file}")
                 try:
-                    with open(os.path.join(REPO_PATH, failing_test_file), "r") as f:
-                        test_context = f"\n\nFAILING TEST CODE:\n{f.read()}"
-                except: pass
+                    full_test_path = os.path.join(REPO_PATH, failing_test_file)
+                    with open(full_test_path, "r") as f:
+                        failing_test_content = f.read()
+                except (FileNotFoundError, OSError, UnicodeDecodeError) as e:
+                    print(f"   Warning: Could not read failing test file: {e}")
             
             # Try to repair each file that might be causing issues
             all_files = files_to_modify + files_to_create
@@ -877,11 +879,21 @@ This PR is being automatically generated to address issue #{github_issue_number}
                 try:
                     with open(full_path, "r", encoding="utf-8") as f:
                         current_content = f.read()
-                except:
+                except (FileNotFoundError, OSError, UnicodeDecodeError) as e:
+                    print(f"   Warning: Could not read {target_file} for repair: {e}")
                     continue
                 
                 # Provide context from other files
                 related_files = {f: all_file_contents.get(f, "") for f in all_files if f != target_file}
+                
+                # Add failing test file to related_files if it exists
+                if failing_test_file and failing_test_content:
+                    related_files[failing_test_file] = failing_test_content
+                
+                # Create test_error context with both log and test file
+                test_error_context = test_log
+                if failing_test_content:
+                    test_error_context = f"{test_log}\n\nFAILING TEST FILE ({failing_test_file}):\n{failing_test_content}"
                 
                 repaired_code = apply_fix(
                     issue_data, 
@@ -889,7 +901,7 @@ This PR is being automatically generated to address issue #{github_issue_number}
                     current_content,
                     codebase_analysis,
                     implementation_plan,
-                    test_error=f"{test_log}\n{test_context}",
+                    test_error=test_error_context,
                     related_files=related_files
                 )
                 
