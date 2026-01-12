@@ -124,3 +124,7 @@ dmypy.json
 
 # ChromaDB vector database
 .chroma/
+
+# AI Agent specific
+.ai_agent_planning.md
+test_token_manager.py
