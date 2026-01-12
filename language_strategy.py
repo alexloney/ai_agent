@@ -128,6 +128,7 @@ class PythonStrategy(LanguageStrategy):
         
         try:
             # Run flake8 with reasonable settings
+            # Note: flake8 is from requirements.txt, not arbitrary PATH executable
             # Ignore some common issues that don't affect functionality:
             # E501: line too long
             # W503: line break before binary operator (style preference)
