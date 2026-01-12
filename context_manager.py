@@ -113,24 +113,30 @@ class CodeContextManager:
                     # Special handling for module-level code before first definition
                     # If we haven't seen a definition yet and chunk is getting large,
                     # save it as "imports and module constants" chunk
-                    if not has_seen_definition and len('\n'.join(current_chunk)) > chunk_size // 2:
+                    # Check every 10 lines to reduce overhead
+                    if not has_seen_definition and i % 10 == 0:
+                        chunk_content = '\n'.join(current_chunk)
+                        if len(chunk_content) > chunk_size // 2:
+                            chunks.append({
+                                'content': chunk_content,
+                                'start_line': current_start,
+                                'end_line': i
+                            })
+                            current_chunk = []
+                            current_start = i + 1
+                
+                # Also split if chunk gets too large
+                # Check every 10 lines to reduce overhead
+                if i % 10 == 0:
+                    chunk_content = '\n'.join(current_chunk)
+                    if len(chunk_content) > chunk_size:
                         chunks.append({
-                            'content': '\n'.join(current_chunk),
+                            'content': chunk_content,
                             'start_line': current_start,
                             'end_line': i
                         })
                         current_chunk = []
                         current_start = i + 1
-                
-                # Also split if chunk gets too large
-                if len('\n'.join(current_chunk)) > chunk_size:
-                    chunks.append({
-                        'content': '\n'.join(current_chunk),
-                        'start_line': current_start,
-                        'end_line': i
-                    })
-                    current_chunk = []
-                    current_start = i + 1
             
             # Add final chunk - this ensures trailing code is captured
             if current_chunk:
