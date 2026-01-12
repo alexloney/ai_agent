@@ -35,6 +35,13 @@ llm = ChatOllama(
     base_url="http://localhost:11434"
 )
 
+def identify_failing_test_file(test_log, repo_path):
+    """Scans the pytest output to find the specific test file that failed."""
+    match = re.search(r'(tests[\\/][a-zA-Z0-9_]+\.py)', test_log)
+    if match:
+        return match.group(1).replace("\\", "/")
+    return None
+
 def get_issue_body(issue_number):
     """Fetch issue details from GitHub using the gh CLI."""
     try:
@@ -588,6 +595,15 @@ def main():
             
             print(f"\n⚠️ TESTS FAILED (Attempt {repair_count+1}/{max_repairs})")
             print("Analyzing failures and applying targeted fixes...")
+
+            failing_test_file = identify_failing_test_file(test_log, REPO_PATH)
+            test_context = ""
+            if failing_test_file:
+                print(f"   Detected failing test: {failing_test_file}")
+                try:
+                    with open(os.path.join(REPO_PATH, failing_test_file), "r") as f:
+                        test_context = f"\n\nFAILING TEST CODE:\n{f.read()}"
+                except: pass
             
             # Try to repair each file that might be causing issues
             for target_file in target_files:
@@ -604,7 +620,7 @@ def main():
                     current_content,
                     codebase_analysis,
                     implementation_plan,
-                    test_error=test_log,
+                    test_error=f"{test_log}\n{test_context}",
                     related_files=related_files
                 )
                 
