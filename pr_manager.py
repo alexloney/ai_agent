@@ -182,9 +182,38 @@ class PRManager:
             print(f"Error committing/pushing: {e}")
             return False
     
+    def add_pr_comment(self, comment_body: str) -> bool:
+        """
+        Add a comment to the PR instead of overwriting the description.
+        
+        Args:
+            comment_body: Comment content
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.pr_number:
+            print("Warning: PR number not found, cannot add comment")
+            return False
+        
+        try:
+            subprocess.run(
+                ["gh", "pr", "comment", self.pr_number,
+                 "--body", comment_body],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            print(f"✅ Added comment to PR #{self.pr_number}")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Error adding PR comment: {e}")
+            return False
+    
     def update_progress(self, phase: str, description: str) -> bool:
         """
-        Update PR with current progress while preserving implementation plan.
+        Update PR progress by adding a timestamped comment.
+        This preserves the original PR description and creates a history.
         
         Args:
             phase: Current phase name
@@ -193,25 +222,18 @@ class PRManager:
         Returns:
             True if successful, False otherwise
         """
-        # Build progress section
-        progress_section = f"""## 🚧 Current Status
+        import datetime
+        
+        # Build progress comment with timestamp
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        progress_comment = f"""## 🚧 Progress Update - {timestamp}
 
 ### Phase: {phase}
 
 {description}
-
----
 """
         
-        # Preserve initial body if it exists
-        if self.initial_body:
-            # Prepend progress to the initial body
-            progress_body = f"{progress_section}\n{self.initial_body}"
-        else:
-            # Fallback to just progress if no initial body
-            progress_body = progress_section + "\n*This PR is being automatically updated as work progresses...*"
-        
-        return self.update_pr_body(progress_body)
+        return self.add_pr_comment(progress_comment)
 
 
 def parse_pr_content(llm_response: str) -> Dict[str, str]:

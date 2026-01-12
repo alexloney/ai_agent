@@ -3,6 +3,7 @@ import subprocess
 import re
 import json
 import sys
+import argparse
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from git import Repo
@@ -13,9 +14,11 @@ from language_strategy import PythonStrategy, LanguageStrategy
 from pr_manager import PRManager, parse_pr_content
 from context_manager import CodeContextManager
 from tools import CodebaseTools, ToolExecutor
+from token_manager import TokenManager
 
 # --- CONFIGURATION ---
-REPO_PATH = os.getcwd()
+# REPO_PATH will be set from command-line args or default to current directory
+REPO_PATH = None
 
 # VERSION
 AGENT_VERSION = "17"
@@ -203,6 +206,9 @@ def plan_changes_with_react(issue_content, file_list, repo_path, codebase_analys
         # Fall back to regular planning
         return plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis, context_manager)
     
+    # Initialize token manager for context control
+    token_manager = TokenManager(max_tokens=16000)
+    
     # ReAct loop: Agent reasons, uses tools, and then decides on files
     exploration_log = []
     iteration = 0
@@ -210,6 +216,10 @@ def plan_changes_with_react(issue_content, file_list, repo_path, codebase_analys
     while iteration < MAX_TOOL_ITERATIONS:
         iteration += 1
         print(f"\n--- ReAct Iteration {iteration} ---")
+        
+        # Check token budget and truncate if needed
+        if exploration_log:
+            exploration_log = token_manager.summarize_exploration_log(exploration_log)
         
         # Build context from previous tool executions
         tool_context = ""
@@ -268,17 +278,34 @@ def plan_changes_with_react(issue_content, file_list, repo_path, codebase_analys
         
         # Extract tool call
         tool_match = re.search(r'TOOL:\s*(\w+)', decision)
-        args_match = re.search(r'ARGS:\s*(\{.*?\})', decision, re.DOTALL)
         
         if tool_match:
             tool_name = tool_match.group(1)
             args = {}
             
-            if args_match:
-                try:
-                    args = json.loads(args_match.group(1))
-                except json.JSONDecodeError as e:
-                    print(f"Warning: Could not parse tool arguments: {e}")
+            # Extract JSON args using brace matching to handle nested JSON
+            args_start = decision.find('ARGS:')
+            if args_start != -1:
+                # Find the first '{' after 'ARGS:'
+                json_start = decision.find('{', args_start)
+                if json_start != -1:
+                    # Count braces to find matching closing brace
+                    brace_count = 0
+                    json_end = -1
+                    for i in range(json_start, len(decision)):
+                        if decision[i] == '{':
+                            brace_count += 1
+                        elif decision[i] == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_end = i + 1
+                                break
+                    
+                    if json_end != -1:
+                        try:
+                            args = json.loads(decision[json_start:json_end])
+                        except json.JSONDecodeError as e:
+                            print(f"Warning: Could not parse tool arguments: {e}")
             
             # Execute tool
             print(f"Executing: {tool_name}({args})")
@@ -789,9 +816,54 @@ def generate_pr_content(issue_data, diff):
 
 # --- MAIN EXECUTION ---
 def main():
-    print(f"--- AI Agent V{AGENT_VERSION} (Enhanced with RAG, ReAct & Linter) ---")
+    global REPO_PATH
     
-    github_issue_number = input("Enter Issue Number to fix: ").strip()
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description='AI Agent - Automatically implement fixes for GitHub issues',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Interactive mode (will prompt for issue number)
+  python agent.py
+  
+  # Non-interactive mode with issue number
+  python agent.py --issue 23
+  
+  # Specify repository path
+  python agent.py --issue 23 --path /path/to/repository
+  
+  # Full example
+  python agent.py --issue 23 --path /home/user/myproject
+        """
+    )
+    parser.add_argument(
+        '--issue', '-i',
+        type=str,
+        help='GitHub issue number to fix'
+    )
+    parser.add_argument(
+        '--path', '-p',
+        type=str,
+        default=os.getcwd(),
+        help='Path to the repository (default: current directory)'
+    )
+    
+    args = parser.parse_args()
+    
+    # Set repository path
+    REPO_PATH = os.path.abspath(args.path)
+    
+    print(f"--- AI Agent V{AGENT_VERSION} (Enhanced with RAG, ReAct & Linter) ---")
+    print(f"Repository path: {REPO_PATH}")
+    
+    # Get issue number from args or prompt
+    if args.issue:
+        github_issue_number = args.issue.strip()
+        print(f"Issue number: {github_issue_number}")
+    else:
+        github_issue_number = input("Enter Issue Number to fix: ").strip()
+    
     if not github_issue_number:
         print("Error: Issue number is required")
         sys.exit(1)
@@ -855,6 +927,40 @@ def main():
     if not files_to_modify and not files_to_create:
         print("No files identified for modification or creation. Exiting.")
         sys.exit(0)
+    
+    # Create an initial commit to enable PR creation
+    print("\n" + "="*60)
+    print("CREATING INITIAL COMMIT")
+    print("="*60)
+    
+    # Create a placeholder file to enable the initial commit
+    placeholder_file = ".ai_agent_planning.md"
+    placeholder_path = os.path.join(REPO_PATH, placeholder_file)
+    
+    try:
+        with open(placeholder_path, "w", encoding="utf-8") as f:
+            f.write(f"""# AI Agent Planning Document
+
+## Issue #{github_issue_number}
+
+### Files to Modify
+{chr(10).join(f'- `{f}`' for f in files_to_modify)}
+
+### Files to Create
+{chr(10).join(f'- `{f}`' for f in files_to_create)}
+
+### Implementation Plan
+{implementation_plan}
+""")
+        
+        # Stage and commit the placeholder
+        repo.index.add([placeholder_file])
+        repo.index.commit(f"chore: AI agent planning for issue #{github_issue_number}")
+        print(f"✅ Created initial planning commit")
+        
+    except Exception as e:
+        print(f"Warning: Could not create initial commit: {e}")
+        print("Attempting to create PR without initial commit...")
     
     # Create WIP PR early
     print("\n" + "="*60)
