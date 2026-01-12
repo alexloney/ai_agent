@@ -32,6 +32,7 @@ class PRManager:
         self.pr_number = None
         self.pr_url = None
         self.is_wip = True
+        self.initial_body = None  # Store the initial detailed body
     
     def create_wip_pr(self, title: str, initial_body: str) -> bool:
         """
@@ -45,6 +46,9 @@ class PRManager:
             True if successful, False otherwise
         """
         wip_title = f"[WIP] {title}"
+        
+        # Store the initial body to preserve implementation details
+        self.initial_body = initial_body
         
         try:
             # Push the branch first
@@ -180,7 +184,7 @@ class PRManager:
     
     def update_progress(self, phase: str, description: str) -> bool:
         """
-        Update PR with current progress.
+        Update PR with current progress while preserving implementation plan.
         
         Args:
             phase: Current phase name
@@ -189,15 +193,24 @@ class PRManager:
         Returns:
             True if successful, False otherwise
         """
-        progress_body = f"""## 🚧 Work In Progress
+        # Build progress section
+        progress_section = f"""## 🚧 Current Status
 
-### Current Phase: {phase}
+### Phase: {phase}
 
 {description}
 
 ---
-*This PR is being automatically updated as work progresses...*
 """
+        
+        # Preserve initial body if it exists
+        if self.initial_body:
+            # Append progress to the initial body
+            progress_body = f"{progress_section}\n{self.initial_body}"
+        else:
+            # Fallback to just progress if no initial body
+            progress_body = progress_section + "\n*This PR is being automatically updated as work progresses...*"
+        
         return self.update_pr_body(progress_body)
 
 

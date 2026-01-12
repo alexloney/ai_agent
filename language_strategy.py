@@ -86,7 +86,7 @@ class PythonStrategy(LanguageStrategy):
         return "python:3.11-slim"
     
     def get_docker_test_command(self) -> str:
-        return "pip install -q -r requirements.txt && pytest"
+        return "if [ -f requirements.txt ]; then pip install -q -r requirements.txt; fi && pytest"
     
     def identify_failing_test_file(self, test_log: str, repo_path: str) -> Optional[str]:
         """
