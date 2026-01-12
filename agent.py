@@ -879,7 +879,8 @@ This PR is being automatically generated to address issue #{github_issue_number}
                 try:
                     with open(full_path, "r", encoding="utf-8") as f:
                         current_content = f.read()
-                except:
+                except (FileNotFoundError, OSError, UnicodeDecodeError) as e:
+                    print(f"   Warning: Could not read {target_file} for repair: {e}")
                     continue
                 
                 # Provide context from other files
