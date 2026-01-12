@@ -21,9 +21,7 @@ AGENT_VERSION = "16"
 # Language Strategy - can be configured for different projects
 LANGUAGE_STRATEGY = PythonStrategy()
 
-# FILE EXTENSIONS (now delegated to strategy)
-CODE_EXTENSIONS = (".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".html", ".css", ".java", ".rs", ".c", ".h", ".cpp", ".hpp")
-TEST_EXTENSIONS = ("_test.py", "test_.py", ".test.js", ".spec.js", ".test.ts", ".spec.ts")
+# DOC_EXTENSIONS - used for filtering documentation files
 DOC_EXTENSIONS = (".md", ".rst", ".txt")
 
 # SANDBOX CONFIGURATION
@@ -767,8 +765,10 @@ This PR is being automatically generated to address issue #{github_issue_number}
         for new_file in files_to_create:
             full_path = os.path.join(REPO_PATH, new_file)
             
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            # Ensure directory exists (only if not root)
+            dir_path = os.path.dirname(full_path)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
             
             # Provide existing files as context
             related_files = all_file_contents.copy()

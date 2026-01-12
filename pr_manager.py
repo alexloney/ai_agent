@@ -154,9 +154,14 @@ class PRManager:
             self.repo.index.add(files)
             
             # Check if there are changes to commit
-            if not self.repo.index.diff("HEAD"):
-                print("No changes to commit")
-                return True
+            # Handle case where there's no HEAD yet (new repo)
+            try:
+                if not self.repo.index.diff("HEAD"):
+                    print("No changes to commit")
+                    return True
+            except Exception:
+                # No HEAD exists yet (new repo), proceed with commit
+                pass
             
             # Commit
             print(f"Committing: {commit_message}")
