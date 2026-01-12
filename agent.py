@@ -869,7 +869,8 @@ This PR is being automatically generated to address issue #{github_issue_number}
                     full_test_path = os.path.join(REPO_PATH, failing_test_file)
                     with open(full_test_path, "r") as f:
                         failing_test_content = f.read()
-                except: pass
+                except (FileNotFoundError, OSError, UnicodeDecodeError) as e:
+                    print(f"   Warning: Could not read failing test file: {e}")
             
             # Try to repair each file that might be causing issues
             all_files = files_to_modify + files_to_create

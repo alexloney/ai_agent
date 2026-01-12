@@ -205,7 +205,7 @@ class PRManager:
         
         # Preserve initial body if it exists
         if self.initial_body:
-            # Append progress to the initial body
+            # Prepend progress to the initial body
             progress_body = f"{progress_section}\n{self.initial_body}"
         else:
             # Fallback to just progress if no initial body
