@@ -70,7 +70,7 @@ def identify_failing_test_file(test_log, repo_path):
         return match.group(1).replace("\\", "/")
     return None
 
-def get_issue_body(issue_number):
+def get_issue_body(issue_number, repo_path=None):
     """Fetch issue details from GitHub using the gh CLI."""
     try:
         issue_num_str = str(issue_number).strip()
@@ -80,6 +80,7 @@ def get_issue_body(issue_number):
             
         result = subprocess.run(
             ["gh", "issue", "view", issue_num_str, "--json", "title,body"],
+            cwd=repo_path,
             capture_output=True, text=True, check=True
         )
         return result.stdout
@@ -425,6 +426,30 @@ def plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis,
     files_to_create = []
     normalized_list = [f.replace("\\", "/") for f in file_list]
     
+    # Invalid file patterns to filter out
+    invalid_patterns = [
+        '(none needed)', 'none needed', 'none', 'n/a', 'na', 
+        'not applicable', 'not needed', 'no files', 'no file',
+        '(none)', '(no files needed)', '(not needed)'
+    ]
+    
+    def is_valid_filename(filename):
+        """Check if a filename is valid and not a placeholder."""
+        if not filename:
+            return False
+        filename_lower = filename.lower().strip()
+        # Check against invalid patterns
+        if filename_lower in invalid_patterns:
+            return False
+        # Check for parentheses-wrapped text (like "(None needed)")
+        if filename.startswith('(') and filename.endswith(')'):
+            return False
+        # Should have a file extension or be a valid path
+        if '.' not in filename and '/' not in filename and '\\' not in filename:
+            # Might be invalid unless it's a known file without extension
+            return False
+        return True
+    
     for line in lines:
         clean_line = line.strip()
         
@@ -439,7 +464,11 @@ def plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis,
         elif clean_line.startswith("CREATE:"):
             clean_line = clean_line[7:].strip()
             clean_line = clean_line.strip('"').strip("'").lstrip('- ').replace("\\", "/")
-            files_to_create.append(clean_line.replace("/", os.sep))
+            # Validate the filename before adding
+            if is_valid_filename(clean_line):
+                files_to_create.append(clean_line.replace("/", os.sep))
+            else:
+                print(f"Skipping invalid filename for creation: '{clean_line}'")
         
         # Legacy support: look for FILE: prefix
         elif clean_line.startswith("FILE:"):
@@ -876,7 +905,7 @@ Examples:
         print(f"Error: {REPO_PATH} is not a valid git repository")
         sys.exit(1)
         
-    issue_data = get_issue_body(github_issue_number)
+    issue_data = get_issue_body(github_issue_number, REPO_PATH)
     if not issue_data: sys.exit(1)
     
     try:
@@ -886,7 +915,7 @@ Examples:
         sys.exit(1)
     
     # Initialize PR Manager
-    pr_manager = PRManager(repo, branch, github_issue_number)
+    pr_manager = PRManager(repo, branch, github_issue_number, REPO_PATH)
     
     # Initialize RAG Context Manager
     context_manager = None
@@ -1002,7 +1031,11 @@ This PR is being automatically generated to address issue #{github_issue_number}
     
     # Update PR with current phase
     pr_manager.update_progress("Phase 3: Gathering Context", 
-                              "Reading existing files and preparing to implement changes...")
+                              "Reading existing files and preparing to implement changes...",
+                              {
+                                  'files_modified': files_to_modify,
+                                  'message': f"Reading {len(files_to_modify)} file(s) for modification"
+                              })
     
     # Read all target files for modification
     all_file_contents = {}
@@ -1021,7 +1054,12 @@ This PR is being automatically generated to address issue #{github_issue_number}
     print("="*60)
     
     pr_manager.update_progress("Phase 4: Implementing Changes",
-                              "Applying fixes to existing files and creating new files...")
+                              "Applying fixes to existing files and creating new files...",
+                              {
+                                  'files_modified': files_to_modify,
+                                  'files_created': files_to_create,
+                                  'iteration': review_iteration + 1
+                              })
     
     review_iteration = 0
     review_approved = False
@@ -1098,7 +1136,13 @@ This PR is being automatically generated to address issue #{github_issue_number}
         print("="*60)
         
         pr_manager.update_progress("Phase 4.5: Code Review",
-                                  f"Performing self-review of changes (iteration {review_iteration + 1})...")
+                                  f"Performing self-review of changes (iteration {review_iteration + 1})...",
+                                  {
+                                      'files_modified': files_to_modify,
+                                      'files_created': files_to_create,
+                                      'iteration': review_iteration + 1,
+                                      'review_status': 'In Progress'
+                                  })
         
         # Re-read all modified/created files for review
         current_file_contents = {}
@@ -1123,7 +1167,12 @@ This PR is being automatically generated to address issue #{github_issue_number}
             commit_msg = f"feat: implement changes for issue #{github_issue_number} (review approved)"
             pr_manager.commit_and_push(all_files, commit_msg)
             pr_manager.update_progress("Phase 4.5: Review Complete",
-                                      "✅ Code review passed! Changes have been committed.")
+                                      "✅ Code review passed! Changes have been committed.",
+                                      {
+                                          'review_status': 'Approved',
+                                          'files_modified': files_to_modify,
+                                          'files_created': files_to_create
+                                      })
             break
         else:
             print(f"⚠️ Self-review iteration {review_iteration + 1} identified concerns.")
@@ -1137,7 +1186,13 @@ This PR is being automatically generated to address issue #{github_issue_number}
                 commit_msg = f"feat: implement changes for issue #{github_issue_number} (review concerns noted)"
                 pr_manager.commit_and_push(all_files, commit_msg)
                 pr_manager.update_progress("Phase 4.5: Review Incomplete",
-                                          f"⚠️ Max review iterations reached. Please review carefully.\n\n{last_review_result}")
+                                          f"⚠️ Max review iterations reached. Please review carefully.\n\n{last_review_result}",
+                                          {
+                                              'review_status': 'Concerns Noted',
+                                              'iteration': MAX_REVIEW_ITERATIONS,
+                                              'files_modified': files_to_modify,
+                                              'files_created': files_to_create
+                                          })
 
     # PHASE 5: TESTING AND VALIDATION
     print("\n" + "="*60)
@@ -1145,7 +1200,11 @@ This PR is being automatically generated to address issue #{github_issue_number}
     print("="*60)
     
     pr_manager.update_progress("Phase 5: Testing",
-                              "Running tests in sandboxed environment...")
+                              "Running tests in sandboxed environment...",
+                              {
+                                  'test_status': 'Starting',
+                                  'message': 'Testing implementation in Docker container'
+                              })
     
     if ENABLE_SANDBOX:
         max_repairs = 10
@@ -1214,6 +1273,16 @@ This PR is being automatically generated to address issue #{github_issue_number}
                 
             repair_count += 1
             
+            # Update PR with repair progress
+            if repair_count < max_repairs:
+                pr_manager.update_progress(f"Phase 5: Test Repair Attempt {repair_count}",
+                                          f"Analyzing test failures and applying fixes...",
+                                          {
+                                              'test_status': 'Repairing',
+                                              'iteration': repair_count,
+                                              'message': f'Attempting repair {repair_count} of {max_repairs}'
+                                          })
+            
             # Commit the repair attempt
             if repair_count < max_repairs:
                 commit_msg = f"fix: repair test failures (attempt {repair_count})"
@@ -1223,14 +1292,27 @@ This PR is being automatically generated to address issue #{github_issue_number}
             print("❌ Warning: Tests still failing after all repair attempts.")
             print("Proceeding with current implementation...")
             pr_manager.update_progress("Phase 5: Testing Complete (with failures)",
-                                      f"⚠️ Tests failed after {max_repairs} repair attempts.\n\nPlease review test failures manually.")
+                                      f"⚠️ Tests failed after {max_repairs} repair attempts.\n\nPlease review test failures manually.",
+                                      {
+                                          'test_status': 'Failed',
+                                          'iteration': max_repairs,
+                                          'message': 'Manual review required'
+                                      })
         else:
             pr_manager.update_progress("Phase 5: Testing Complete",
-                                      "✅ All tests passed!")
+                                      "✅ All tests passed!",
+                                      {
+                                          'test_status': 'Passed',
+                                          'message': 'All tests passing successfully'
+                                      })
     else:
         print("⚠️ Sandbox testing disabled")
         pr_manager.update_progress("Phase 5: Testing Skipped",
-                                  "Sandbox testing is disabled.")
+                                  "Sandbox testing is disabled.",
+                                  {
+                                      'test_status': 'Skipped',
+                                      'message': 'ENABLE_SANDBOX is False'
+                                  })
 
     # PHASE 6: FINALIZE PR
     print("\n" + "="*60)
