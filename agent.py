@@ -330,6 +330,48 @@ def plan_changes_with_react(issue_content, file_list, repo_path, codebase_analys
     return plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis, context_manager, exploration_log)
 
 
+def is_valid_filename(filename):
+    """
+    Check if a filename is valid and not a placeholder.
+    
+    Args:
+        filename: The filename to validate
+        
+    Returns:
+        bool: True if valid, False if it appears to be a placeholder
+    """
+    # Invalid file patterns to filter out
+    invalid_patterns = [
+        '(none needed)', 'none needed', 'none', 'n/a', 'na', 
+        'not applicable', 'not needed', 'no files', 'no file',
+        '(none)', '(no files needed)', '(not needed)'
+    ]
+    
+    if not filename:
+        return False
+    filename_lower = filename.lower().strip()
+    # Check against invalid patterns
+    if filename_lower in invalid_patterns:
+        return False
+    # Check for parentheses-wrapped text (like "(None needed)")
+    if filename.startswith('(') and filename.endswith(')'):
+        return False
+    # Accept files with extensions, path separators, or known extension-less files
+    has_extension = '.' in filename
+    has_path = '/' in filename or '\\' in filename
+    # Common files without extensions
+    known_extensionless = {'Dockerfile', 'Makefile', 'Rakefile', 'Gemfile', 
+                           'Procfile', 'LICENSE', 'README', 'CHANGELOG',
+                           'CONTRIBUTING', 'AUTHORS', 'NOTICE'}
+    basename = os.path.basename(filename)
+    is_known = basename in known_extensionless
+    
+    if not (has_extension or has_path or is_known):
+        # Likely invalid
+        return False
+    return True
+
+
 def plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis, context_manager=None, exploration_log=None):
     """Plan changes with optional RAG and exploration context."""
     if not file_list:
@@ -425,38 +467,6 @@ def plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis,
     files_to_modify = []
     files_to_create = []
     normalized_list = [f.replace("\\", "/") for f in file_list]
-    
-    # Invalid file patterns to filter out
-    invalid_patterns = [
-        '(none needed)', 'none needed', 'none', 'n/a', 'na', 
-        'not applicable', 'not needed', 'no files', 'no file',
-        '(none)', '(no files needed)', '(not needed)'
-    ]
-    
-    def is_valid_filename(filename):
-        """Check if a filename is valid and not a placeholder."""
-        if not filename:
-            return False
-        filename_lower = filename.lower().strip()
-        # Check against invalid patterns
-        if filename_lower in invalid_patterns:
-            return False
-        # Check for parentheses-wrapped text (like "(None needed)")
-        if filename.startswith('(') and filename.endswith(')'):
-            return False
-        # Accept files with extensions, path separators, or known extension-less files
-        has_extension = '.' in filename
-        has_path = '/' in filename or '\\' in filename
-        # Common files without extensions
-        known_extensionless = ['Dockerfile', 'Makefile', 'Rakefile', 'Gemfile', 
-                               'Procfile', 'LICENSE', 'README', 'CHANGELOG',
-                               'CONTRIBUTING', 'AUTHORS', 'NOTICE']
-        is_known = any(filename.endswith(known) for known in known_extensionless)
-        
-        if not (has_extension or has_path or is_known):
-            # Likely invalid
-            return False
-        return True
     
     for line in lines:
         clean_line = line.strip()

@@ -30,7 +30,7 @@ class PRManager:
         self.repo = repo
         self.branch_name = branch_name
         self.issue_number = issue_number
-        self.repo_path = repo_path if repo_path else repo.working_dir
+        self.repo_path = repo_path or repo.working_dir
         self.pr_number = None
         self.pr_url = None
         self.is_wip = True
