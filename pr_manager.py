@@ -13,11 +13,36 @@ import json
 import re
 from typing import Optional, Dict
 
+# Maximum files to display in progress updates
+MAX_FILES_TO_DISPLAY = 10
+
+
+def format_file_list(files: list, label: str) -> str:
+    """
+    Format a list of files for display in PR comments.
+    
+    Args:
+        files: List of file paths
+        label: Label for the file list (e.g., "Files Modified")
+        
+    Returns:
+        Formatted string with file list
+    """
+    if not files:
+        return ""
+    
+    result = f"\n**{label}:** {len(files)}\n"
+    for f in files[:MAX_FILES_TO_DISPLAY]:
+        result += f"- `{f}`\n"
+    if len(files) > MAX_FILES_TO_DISPLAY:
+        result += f"- ... and {len(files) - MAX_FILES_TO_DISPLAY} more\n"
+    return result
+
 
 class PRManager:
     """Manages GitHub Pull Request operations."""
     
-    def __init__(self, repo, branch_name: str, issue_number: str):
+    def __init__(self, repo, branch_name: str, issue_number: str, repo_path: str = None):
         """
         Initialize PR Manager.
         
@@ -25,10 +50,12 @@ class PRManager:
             repo: GitPython Repo object
             branch_name: Name of the branch
             issue_number: GitHub issue number
+            repo_path: Path to the repository (for gh commands)
         """
         self.repo = repo
         self.branch_name = branch_name
         self.issue_number = issue_number
+        self.repo_path = repo_path or repo.working_dir
         self.pr_number = None
         self.pr_url = None
         self.is_wip = True
@@ -61,6 +88,7 @@ class PRManager:
                 ["gh", "pr", "create", 
                  "--title", wip_title,
                  "--body", initial_body],
+                cwd=self.repo_path,
                 capture_output=True,
                 text=True,
                 check=True
@@ -101,6 +129,7 @@ class PRManager:
             subprocess.run(
                 ["gh", "pr", "edit", self.pr_number,
                  "--body", new_body],
+                cwd=self.repo_path,
                 capture_output=True,
                 text=True,
                 check=True
@@ -131,6 +160,7 @@ class PRManager:
                 ["gh", "pr", "edit", self.pr_number,
                  "--title", final_title,
                  "--body", final_body],
+                cwd=self.repo_path,
                 capture_output=True,
                 text=True,
                 check=True
@@ -200,6 +230,7 @@ class PRManager:
             subprocess.run(
                 ["gh", "pr", "comment", self.pr_number,
                  "--body", comment_body],
+                cwd=self.repo_path,
                 capture_output=True,
                 text=True,
                 check=True
@@ -210,7 +241,7 @@ class PRManager:
             print(f"Error adding PR comment: {e}")
             return False
     
-    def update_progress(self, phase: str, description: str) -> bool:
+    def update_progress(self, phase: str, description: str, details: dict = None) -> bool:
         """
         Update PR progress by adding a timestamped comment.
         This preserves the original PR description and creates a history.
@@ -218,6 +249,7 @@ class PRManager:
         Args:
             phase: Current phase name
             description: Description of current work
+            details: Optional dictionary with additional details (files, results, etc.)
             
         Returns:
             True if successful, False otherwise
@@ -232,6 +264,27 @@ class PRManager:
 
 {description}
 """
+        
+        # Add details if provided
+        if details:
+            # Format file lists using helper function
+            if 'files_modified' in details and details['files_modified']:
+                progress_comment += format_file_list(details['files_modified'], "Files Modified")
+            
+            if 'files_created' in details and details['files_created']:
+                progress_comment += format_file_list(details['files_created'], "Files Created")
+            
+            if 'test_status' in details:
+                progress_comment += f"\n**Test Status:** {details['test_status']}\n"
+            
+            if 'review_status' in details:
+                progress_comment += f"\n**Review Status:** {details['review_status']}\n"
+            
+            if 'iteration' in details:
+                progress_comment += f"\n**Iteration:** {details['iteration']}\n"
+            
+            if 'message' in details:
+                progress_comment += f"\n{details['message']}\n"
         
         return self.add_pr_comment(progress_comment)
 
