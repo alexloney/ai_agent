@@ -367,7 +367,8 @@ def is_valid_filename(filename):
     basename = os.path.basename(filename)
     
     # Check validity: file must have extension, be in a path, or be a known extensionless file
-    has_extension = '.' in filename
+    # Check for extension in basename (not full path) to avoid false positives from directory names
+    has_extension = '.' in basename
     has_path = '/' in filename or '\\' in filename
     
     # Common files without extensions (exact basename match)
@@ -498,6 +499,8 @@ def plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis,
                 print(f"Skipping invalid filename for creation: '{clean_line}'")
         
         # Legacy support: look for FILE: prefix
+        # Note: FILE: is for existing files to modify, not new files to create
+        # So we don't need to validate these as strictly (they must already exist)
         elif clean_line.startswith("FILE:"):
             clean_line = clean_line[5:].strip()
             clean_line = clean_line.strip('"').strip("'").lstrip('- ').replace("\\", "/")
@@ -1080,16 +1083,16 @@ This PR is being automatically generated to address issue #{github_issue_number}
     print("PHASE 4: IMPLEMENTING CHANGES (with Review Loop)")
     print("="*60)
     
+    review_iteration = 0
+    review_approved = False
+    
     pr_manager.update_progress("Phase 4: Implementing Changes",
                               "Applying fixes to existing files and creating new files...",
                               {
                                   'files_modified': files_to_modify,
                                   'files_created': files_to_create,
-                                  'iteration': review_iteration + 1
+                                  'iteration': 1  # First iteration
                               })
-    
-    review_iteration = 0
-    review_approved = False
     
     while review_iteration < MAX_REVIEW_ITERATIONS and not review_approved:
         if review_iteration > 0:
