@@ -347,29 +347,30 @@ def is_valid_filename(filename):
         '(none)', '(no files needed)', '(not needed)'
     ]
     
+    # Empty filename is invalid
     if not filename:
         return False
-    filename_lower = filename.lower().strip()
-    # Check against invalid patterns
-    if filename_lower in invalid_patterns:
+    
+    # Check against known invalid patterns
+    if filename.lower().strip() in invalid_patterns:
         return False
-    # Check for parentheses-wrapped text (like "(None needed)")
+    
+    # Reject parentheses-wrapped text (like "(None needed)")
     if filename.startswith('(') and filename.endswith(')'):
         return False
-    # Accept files with extensions, path separators, or known extension-less files
+    
+    # Check validity: file must have extension, be in a path, or be a known extensionless file
     has_extension = '.' in filename
     has_path = '/' in filename or '\\' in filename
-    # Common files without extensions
+    
+    # Common files without extensions (check exact basename match)
     known_extensionless = {'Dockerfile', 'Makefile', 'Rakefile', 'Gemfile', 
                            'Procfile', 'LICENSE', 'README', 'CHANGELOG',
                            'CONTRIBUTING', 'AUTHORS', 'NOTICE'}
-    basename = os.path.basename(filename)
-    is_known = basename in known_extensionless
+    is_known_extensionless = os.path.basename(filename) in known_extensionless
     
-    if not (has_extension or has_path or is_known):
-        # Likely invalid
-        return False
-    return True
+    # Valid if it has any of these properties
+    return has_extension or has_path or is_known_extensionless
 
 
 def plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis, context_manager=None, exploration_log=None):

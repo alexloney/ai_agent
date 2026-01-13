@@ -13,6 +13,32 @@ import json
 import re
 from typing import Optional, Dict
 
+# Maximum files to display in progress updates
+# Maximum files to display in progress updates
+MAX_FILES_TO_DISPLAY = 10
+
+
+def format_file_list(files: list, label: str) -> str:
+    """
+    Format a list of files for display in PR comments.
+    
+    Args:
+        files: List of file paths
+        label: Label for the file list (e.g., "Files Modified")
+        
+    Returns:
+        Formatted string with file list
+    """
+    if not files:
+        return ""
+    
+    result = f"\n**{label}:** {len(files)}\n"
+    for f in files[:MAX_FILES_TO_DISPLAY]:
+        result += f"- `{f}`\n"
+    if len(files) > MAX_FILES_TO_DISPLAY:
+        result += f"- ... and {len(files) - MAX_FILES_TO_DISPLAY} more\n"
+    return result
+
 
 class PRManager:
     """Manages GitHub Pull Request operations."""
@@ -231,9 +257,6 @@ class PRManager:
         """
         import datetime
         
-        # Maximum files to display in progress updates
-        MAX_FILES_TO_DISPLAY = 10
-        
         # Build progress comment with timestamp
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         progress_comment = f"""## 🚧 Progress Update - {timestamp}
@@ -245,19 +268,12 @@ class PRManager:
         
         # Add details if provided
         if details:
+            # Format file lists using helper function
             if 'files_modified' in details and details['files_modified']:
-                progress_comment += f"\n**Files Modified:** {len(details['files_modified'])}\n"
-                for f in details['files_modified'][:MAX_FILES_TO_DISPLAY]:
-                    progress_comment += f"- `{f}`\n"
-                if len(details['files_modified']) > MAX_FILES_TO_DISPLAY:
-                    progress_comment += f"- ... and {len(details['files_modified']) - MAX_FILES_TO_DISPLAY} more\n"
+                progress_comment += format_file_list(details['files_modified'], "Files Modified")
             
             if 'files_created' in details and details['files_created']:
-                progress_comment += f"\n**Files Created:** {len(details['files_created'])}\n"
-                for f in details['files_created'][:MAX_FILES_TO_DISPLAY]:
-                    progress_comment += f"- `{f}`\n"
-                if len(details['files_created']) > MAX_FILES_TO_DISPLAY:
-                    progress_comment += f"- ... and {len(details['files_created']) - MAX_FILES_TO_DISPLAY} more\n"
+                progress_comment += format_file_list(details['files_created'], "Files Created")
             
             if 'test_status' in details:
                 progress_comment += f"\n**Test Status:** {details['test_status']}\n"
