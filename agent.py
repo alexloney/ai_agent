@@ -444,9 +444,17 @@ def plan_changes_regular(issue_content, file_list, repo_path, codebase_analysis,
         # Check for parentheses-wrapped text (like "(None needed)")
         if filename.startswith('(') and filename.endswith(')'):
             return False
-        # Should have a file extension or be a valid path
-        if '.' not in filename and '/' not in filename and '\\' not in filename:
-            # Might be invalid unless it's a known file without extension
+        # Accept files with extensions, path separators, or known extension-less files
+        has_extension = '.' in filename
+        has_path = '/' in filename or '\\' in filename
+        # Common files without extensions
+        known_extensionless = ['Dockerfile', 'Makefile', 'Rakefile', 'Gemfile', 
+                               'Procfile', 'LICENSE', 'README', 'CHANGELOG',
+                               'CONTRIBUTING', 'AUTHORS', 'NOTICE']
+        is_known = any(filename.endswith(known) for known in known_extensionless)
+        
+        if not (has_extension or has_path or is_known):
+            # Likely invalid
             return False
         return True
     

@@ -231,6 +231,9 @@ class PRManager:
         """
         import datetime
         
+        # Maximum files to display in progress updates
+        MAX_FILES_TO_DISPLAY = 10
+        
         # Build progress comment with timestamp
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         progress_comment = f"""## 🚧 Progress Update - {timestamp}
@@ -244,17 +247,17 @@ class PRManager:
         if details:
             if 'files_modified' in details and details['files_modified']:
                 progress_comment += f"\n**Files Modified:** {len(details['files_modified'])}\n"
-                for f in details['files_modified'][:10]:  # Limit to first 10
+                for f in details['files_modified'][:MAX_FILES_TO_DISPLAY]:
                     progress_comment += f"- `{f}`\n"
-                if len(details['files_modified']) > 10:
-                    progress_comment += f"- ... and {len(details['files_modified']) - 10} more\n"
+                if len(details['files_modified']) > MAX_FILES_TO_DISPLAY:
+                    progress_comment += f"- ... and {len(details['files_modified']) - MAX_FILES_TO_DISPLAY} more\n"
             
             if 'files_created' in details and details['files_created']:
                 progress_comment += f"\n**Files Created:** {len(details['files_created'])}\n"
-                for f in details['files_created'][:10]:
+                for f in details['files_created'][:MAX_FILES_TO_DISPLAY]:
                     progress_comment += f"- `{f}`\n"
-                if len(details['files_created']) > 10:
-                    progress_comment += f"- ... and {len(details['files_created']) - 10} more\n"
+                if len(details['files_created']) > MAX_FILES_TO_DISPLAY:
+                    progress_comment += f"- ... and {len(details['files_created']) - MAX_FILES_TO_DISPLAY} more\n"
             
             if 'test_status' in details:
                 progress_comment += f"\n**Test Status:** {details['test_status']}\n"
