@@ -334,13 +334,17 @@ def is_valid_filename(filename):
     """
     Check if a filename is valid and not a placeholder.
     
+    Common extensionless files that are accepted:
+    - Build tools: Dockerfile, Makefile, Rakefile, Gemfile, Procfile
+    - Documentation: README, CHANGELOG, CONTRIBUTING, AUTHORS, NOTICE, LICENSE
+    
     Args:
         filename: The filename to validate
         
     Returns:
         bool: True if valid, False if it appears to be a placeholder
     """
-    # Invalid file patterns to filter out
+    # Invalid file patterns to filter out (LLM placeholders)
     invalid_patterns = [
         '(none needed)', 'none needed', 'none', 'n/a', 'na', 
         'not applicable', 'not needed', 'no files', 'no file',
@@ -359,15 +363,19 @@ def is_valid_filename(filename):
     if filename.startswith('(') and filename.endswith(')'):
         return False
     
+    # Extract basename once for efficiency
+    basename = os.path.basename(filename)
+    
     # Check validity: file must have extension, be in a path, or be a known extensionless file
     has_extension = '.' in filename
     has_path = '/' in filename or '\\' in filename
     
-    # Common files without extensions (check exact basename match)
+    # Common files without extensions (exact basename match)
+    # These are standard files commonly found in repositories
     known_extensionless = {'Dockerfile', 'Makefile', 'Rakefile', 'Gemfile', 
                            'Procfile', 'LICENSE', 'README', 'CHANGELOG',
                            'CONTRIBUTING', 'AUTHORS', 'NOTICE'}
-    is_known_extensionless = os.path.basename(filename) in known_extensionless
+    is_known_extensionless = basename in known_extensionless
     
     # Valid if it has any of these properties
     return has_extension or has_path or is_known_extensionless

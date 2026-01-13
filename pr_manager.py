@@ -14,7 +14,6 @@ import re
 from typing import Optional, Dict
 
 # Maximum files to display in progress updates
-# Maximum files to display in progress updates
 MAX_FILES_TO_DISPLAY = 10
 
 
